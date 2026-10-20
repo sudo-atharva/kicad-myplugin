@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>KiCad One-Hand Guide</title>
+<style>
+  @page { size: A4; margin: 14mm 14mm 16mm 14mm; }
+  :root { --ink:#1d2329; --muted:#5b6670; --line:#d7dde2; --sch:#2f6fd0; --pcb:#c4621d; --both:#2e8b57; --bg:#f6f8fa; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: var(--ink); font-size: 10.5pt; line-height: 1.45; margin: 0; }
+  h1 { font-size: 22pt; margin: 0 0 2mm; }
+  h2 { font-size: 15pt; margin: 7mm 0 2mm; padding-bottom: 1mm; border-bottom: 2px solid var(--ink); }
+  h3 { font-size: 11.5pt; margin: 4mm 0 1mm; }
+  p, li { margin: 1mm 0; }
+  .sub { color: var(--muted); margin-bottom: 5mm; }
+  .page { page-break-after: always; }
+  table { border-collapse: collapse; width: 100%; margin: 2mm 0; font-size: 9.5pt; }
+  th, td { border: 1px solid var(--line); padding: 1.4mm 2mm; text-align: left; vertical-align: top; }
+  th { background: var(--bg); }
+  code, kbd { font-family: Consolas, monospace; font-size: 9.5pt; }
+  kbd { border: 1px solid #9aa4ad; border-bottom-width: 2px; border-radius: 3px; padding: 0 1.2mm; background: #fff; }
+  .note { background: #fff8e1; border-left: 3px solid #e0a800; padding: 2mm 3mm; margin: 3mm 0; }
+  .ok { background: #eaf6ee; border-left: 3px solid var(--both); padding: 2mm 3mm; margin: 3mm 0; }
+  .legend span { display: inline-block; margin-right: 6mm; }
+  .sw { display:inline-block; width: 3.2mm; height: 3.2mm; border-radius: 1mm; vertical-align: -0.5mm; margin-right: 1mm; }
+  /* keyboard */
+  .kb { margin: 4mm 0 2mm; }
+  .row { display: flex; gap: 1.6mm; margin-bottom: 1.6mm; }
+  .key { width: 22mm; height: 23mm; border: 1.3px solid #8f99a3; border-radius: 2.5mm; background: #fff; padding: 1mm 1.3mm;
+         box-sizing: border-box; position: relative; font-size: 7.2pt; line-height: 1.15; }
+  .key.off { background: var(--bg); color: #9aa4ad; }
+  .cap { font-size: 12pt; font-weight: 700; color: var(--ink); }
+  .key.off .cap { color: #aab3bb; }
+  .s { color: var(--sch); font-weight: 600; } .p { color: var(--pcb); font-weight: 600; } .b { color: var(--both); font-weight: 600; }
+  .wide { width: 30mm; } .space { width: 70mm; }
+  .r1 { margin-left: 0; } .r2 { margin-left: 6mm; } .r3 { margin-left: 11mm; } .r4 { margin-left: 18mm; }
+  .cols { display: flex; gap: 6mm; } .cols > div { flex: 1; }
+  ol li { margin: 1.2mm 0; }
+  .small { font-size: 8.5pt; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- PAGE 1: keyboard -->
+<section class="page">
+  <h1>KiCad one-hand layout</h1>
+  <div class="sub">Left hand on the keyboard, right hand on the mouse. The same key does the same <em>idea</em> in the schematic and the PCB editor.</div>
+  <div class="legend"><span><i class="sw" style="background:var(--sch)"></i>Schematic</span><span><i class="sw" style="background:var(--pcb)"></i>PCB</span><span><i class="sw" style="background:var(--both)"></i>Both</span></div>
+
+  <div class="kb">
+    <div class="row r1">
+      <div class="key"><div class="cap">`</div><span class="b">highlight net</span><br><span class="b">⇧ clear</span></div>
+      <div class="key off"><div class="cap">1</div>(length tuner)</div>
+      <div class="key off"><div class="cap">2</div>(length tuner)</div>
+      <div class="key off"><div class="cap">3</div>(length tuner)</div>
+      <div class="key off"><div class="cap">4</div>(length tuner)</div>
+      <div class="key off"><div class="cap">5</div></div>
+    </div>
+    <div class="row r2">
+      <div class="key"><div class="cap">Q</div><span class="s">no-connect</span><br><span class="p">custom size (routing)</span><br>Alt: <span class="p">track width ±</span></div>
+      <div class="key"><div class="cap">W</div><span class="s">wire</span> / <span class="p">route</span><br>⇧ <span class="s">bus</span> / <span class="p">diff pair</span></div>
+      <div class="key"><div class="cap">E</div><span class="b">properties</span><br><span class="b">(value, footprint)</span></div>
+      <div class="key"><div class="cap">R</div><span class="b">rotate</span><br>⇧ <span class="b">other way</span></div>
+      <div class="key"><div class="cap">T</div><span class="s">net label</span><br>Alt <span class="s">text</span><br><span class="p">find &amp; move part</span></div>
+    </div>
+    <div class="row r3">
+      <div class="key"><div class="cap">A</div><span class="s">add symbol</span><br><span class="p">add footprint</span></div>
+      <div class="key"><div class="cap">S</div><span class="s">power symbol</span><br>(supply)</div>
+      <div class="key"><div class="cap">D</div><span class="b">drag</span><br>⇧ <span class="b">datasheet</span></div>
+      <div class="key"><div class="cap">F</div><span class="s">mirror</span> ⇧ vert.<br><span class="p">flip side</span></div>
+      <div class="key"><div class="cap">G</div><span class="p">drag free angle</span></div>
+    </div>
+    <div class="row r4">
+      <div class="key"><div class="cap">Z</div><span class="p">zone</span><br>⇧ <span class="p">cutout</span><br><span class="s">bus entry</span></div>
+      <div class="key"><div class="cap">X</div><span class="b">delete</span><br>(Del still works)</div>
+      <div class="key"><div class="cap">C</div><span class="b">Ctrl+C copy</span></div>
+      <div class="key"><div class="cap">V</div><span class="s">global label</span> ⇧ <span class="s">hier.</span><br><span class="p">via (routing) /<br>switch F↔B layer</span></div>
+      <div class="key"><div class="cap">B</div><span class="p">fill all zones</span></div>
+    </div>
+    <div class="row r4"><div class="key wide"><div class="cap">Ctrl</div><span class="b">+D duplicate<br>+Z undo</span></div><div class="key space"><div class="cap">Space</div><span class="b">set relative origin</span></div></div>
+  </div>
+
+  <h3>The idea behind each key</h3>
+  <table>
+    <tr><th>Key</th><th>Idea</th><th>Schematic</th><th>PCB</th></tr>
+    <tr><td><kbd>W</kbd></td><td>connect</td><td>wire (⇧ bus)</td><td>route track (⇧ differential pair)</td></tr>
+    <tr><td><kbd>V</kbd></td><td>jump</td><td>global label (⇧ hierarchical): jumps between sheets</td><td>via: jumps between layers</td></tr>
+    <tr><td><kbd>T</kbd></td><td>name</td><td>net label (Alt+T free text)</td><td>find &amp; move footprint</td></tr>
+    <tr><td><kbd>A</kbd> <kbd>S</kbd></td><td>add</td><td>symbol / power symbol</td><td>footprint</td></tr>
+    <tr><td><kbd>D</kbd> <kbd>M</kbd></td><td>move</td><td>drag keeps wires / move breaks them</td><td>drag keeps tracks / move</td></tr>
+    <tr><td><kbd>F</kbd></td><td>flip</td><td>mirror (⇧ vertical)</td><td>flip to the other side</td></tr>
+    <tr><td><kbd>X</kbd></td><td>remove</td><td colspan="2">delete in both (Del still works)</td></tr>
+    <tr><td><kbd>Z</kbd> <kbd>B</kbd></td><td>copper</td><td>—</td><td>zone, ⇧ cutout · B fills all zones</td></tr>
+  </table>
+
+  <h3>Install / undo</h3>
+  <p><b>Install:</b> Preferences › Preferences › Hotkeys › <i>Import Hotkeys…</i> › <code>onehand.hotkeys</code> (or copy it over <code>%APPDATA%\kicad\10.0\user.hotkeys</code> and restart KiCad).
+  <b>Undo:</b> same dialog › <i>Reset to defaults</i>. It changes 20 of 890 bindings; everything else stays KiCad default.</p>
+  <p class="small">Freed / moved: sheet (toolbar only), Edit Value &amp; Edit Footprint (use E), grid ±stays N / ⇧N, track width ± is Alt+Q / Alt+⇧Q.</p>
+</section>
+
+<!-- PAGE 2: MyPlugin -->
+<section class="page">
+  <h1>MyPlugin workflow</h1>
+  <div class="sub">One toolbar button → hub with eight tools. Run them in this order.</div>
+  <table>
+    <tr><th>#</th><th>Tool</th><th>What it does</th><th>When</th></tr>
+    <tr><td>1</td><td>Fab Rules</td><td>Board Setup constraints + Default netclass + DRC rules = Lion Circuits limits (MII 6/6 mil, 0.35 mm drill, 0.66 mm via…). Can set it as the default for every new project.</td><td>first, once per board</td></tr>
+    <tr><td>2</td><td>Net Setup</td><td>Volts + amps per net → IPC-2221 width, clearance, via size and count. Creates netclasses, fills the width/via dropdowns, writes DRC rules so thin power traces become DRC errors.</td><td>after schematic sync</td></tr>
+    <tr><td>3</td><td>Power Pours</td><td>Copper around regulator pad groups, GND pours, plane vias for pads a pour would isolate, GND stitching. Skips pours that would make islands and tells you why.</td><td>after placement</td></tr>
+    <tr><td>4</td><td>Autoroute H/V</td><td>Freerouting: horizontal top, vertical bottom. Uses your netclasses; never shrinks a trace to make it fit; whatever doesn't fit stays unrouted.</td><td>signals</td></tr>
+    <tr><td>5</td><td>Power Trace</td><td>Select a pad/trace → V/A → netclass + widen existing traces → press <kbd>W</kbd> and drag.</td><td>power nets by hand</td></tr>
+    <tr><td>6</td><td>Silk Beautify</td><td>Reference placement, net names on connector pins, values to Fab; lists what it couldn't place.</td><td>last, before DRC</td></tr>
+    <tr><td>—</td><td>3D Models</td><td>Matches each footprint without a model to a KiCad library footprint by pad geometry and attaches its 3D model.</td><td>after an Eagle import</td></tr>
+    <tr><td>—</td><td>Eagle → KiCad Symbols</td><td>Swaps imported Eagle symbols for KiCad ones; keeps Eagle pin numbers; refuses to save if the netlist changes.</td><td>after an Eagle import</td></tr>
+  </table>
+
+  <h2>Design blocks (KiCad 10)</h2>
+  <p>A design block is a reusable circuit: a schematic snippet, and in KiCad 10 optionally its PCB layout too. Think "buck converter block", "USB-C input block", "ESP32 core block".</p>
+  <div class="cols">
+    <div>
+      <h3>Make one</h3>
+      <ol>
+        <li><b>Create a library once:</b> View › Panels › <b>Design Blocks</b>, then in the panel's menu make a new design block library (e.g. <code>MyBlocks</code>).</li>
+        <li><b>Schematic part:</b> select the circuit (parts, wires, labels) › right-click › <b>Save Selection as Design Block</b>, pick <code>MyBlocks</code>, give it a name, description and keywords.</li>
+        <li><b>PCB part:</b> in the PCB editor place and route that same circuit, select it › right-click the <b>existing</b> block in the Design Blocks panel › <b>Update Design Block from Selection</b>. It must be the same block as the schematic, not just the same library.</li>
+      </ol>
+    </div>
+    <div>
+      <h3>Use one</h3>
+      <ol>
+        <li><b>Schematic:</b> drag the block from the Design Blocks panel. Options: repeated placement, place as group or as a new sheet, keep or re-annotate references.</li>
+        <li><b>PCB:</b> Update PCB from Schematic (F8). Footprints that came from the block can take the saved layout (option <i>Apply design block layouts to new groups</i>; keep <i>Group footprints</i> on).</li>
+        <li>Library location: <code>Preferences › Manage Design Block Libraries</code>.</li>
+      </ol>
+    </div>
+  </div>
+  <div class="note"><b>Known issues (KiCad 10.0.x, community reports):</b> blocks with nested sheets are not supported; running <i>Update Design Block from Selection</i> again on a block that already has a linked group nests groups inside groups (check before repeating); very large blocks (100+ parts) applied many times have crashed the PCB editor. Save before using them.</div>
+  <p><b>Good first blocks for your roadmap:</b> LM2596 5 V buck (from <code>01_Beginner/03</code>), AMS1117 3.3 V LDO, USB-C 5 V input with CC resistors, ESP32 auto-reset (UMH3N), PC817 relay driver.</p>
+</section>
+
+<!-- PAGE 3: Eagle -->
+<section>
+  <h1>Eagle ⇄ KiCad</h1>
+  <h2>Eagle → KiCad (works well)</h2>
+  <ol>
+    <li><b>Board:</b> KiCad › File › Import › Non-KiCad Board › <code>.brd</code> (or <code>kicad-cli pcb import --format eagle</code>). Copper, outline, zones and nets come across.</li>
+    <li><b>Schematic:</b> KiCad › File › Import › Non-KiCad Schematic › <code>.sch</code>. Eagle libraries get embedded as an <code>eagle_import</code> library.</li>
+    <li><b>MyPlugin › 3D Models:</b> Eagle footprints have no 3D. This attaches the matching KiCad model by pad geometry (tested: 260 of 261 parts on a real board).</li>
+    <li><b>MyPlugin › Eagle → KiCad Symbols:</b> replaces Eagle symbols with KiCad library symbols, keeps pin numbers so the PCB still matches, and verifies the netlist is identical before saving.</li>
+    <li><b>MyPlugin › Fab Rules</b> then <b>Net Setup</b>: Eagle's DRC does not carry over cleanly; set rules again in KiCad.</li>
+  </ol>
+  <h2>KiCad → Eagle (no proper automatic path)</h2>
+  <p>There is <b>no native KiCad → Eagle or KiCad → Fusion Electronics importer</b>. Autodesk forum threads have asked for one for years without it appearing. A paid service (Elgris) offers conversion; user reports on its quality are mixed.</p>
+  <table>
+    <tr><th>You need…</th><th>Do this</th></tr>
+    <tr><td>Boards made</td><td>Send <b>Gerbers + drill</b> (or ODB++ / IPC-2581) from KiCad. Fabs never need Eagle files.</td></tr>
+    <tr><td>Someone using Eagle/Fusion to <i>view</i> it</td><td>Export PDF schematics, 3D STEP, Gerbers. Fusion opens STEP; Gerber viewers are everywhere.</td></tr>
+    <tr><td>To <i>edit</i> it in Eagle/Fusion</td><td>Re-enter it: import the outline as DXF (KiCad › File › Export › DXF), redraw the schematic with matching Eagle libraries, place parts from KiCad's position file, then route (a DSN/SES round-trip through Freerouting can carry traces, but only if part names and footprints match exactly).</td></tr>
+  </table>
+  <div class="ok"><b>Recommendation:</b> keep KiCad as the master copy. Autodesk has announced the retirement of standalone EAGLE, and every fab accepts Gerbers. Converting <i>into</i> KiCad is solid; converting <i>out of</i> it is a manual job.</div>
+
+  <h2>Sources</h2>
+  <p class="small">
+  Lion Circuits capabilities: lioncircuits.com/pcb-manufacturing-capabilities ·
+  KiCad add-on packaging: dev-docs.kicad.org/en/addons ·
+  Design blocks (community): forum.kicad.info threads "PCB design block from schematic", "KiCad 10.0.4 Design Block Problems", "layout editor crashes when clicking on a newly placed design block"; gitlab.com/kicad/code/kicad/-/issues/25368 ·
+  KiCad → Eagle: forums.autodesk.com "KiCad to EaglePCB" and "Importing KiCad projects" threads ·
+  Trace width: IPC-2221 (I = k·ΔT<sup>0.44</sup>·A<sup>0.725</sup>).
+  </p>
+</section>
+</body>
+</html>

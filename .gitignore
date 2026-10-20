@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+fp_index.json
+freerouting.jar
+dist/
+3d_generated/

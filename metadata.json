@@ -1,0 +1,26 @@
+{
+  "$schema": "https://go.kicad.org/pcm/schemas/v1",
+  "name": "MyPlugin",
+  "description": "Fab-aware DRC (Lion Circuits), V/A net sizing, power pours + stitching, H/V autoroute, silkscreen cleanup, Eagle 3D models & symbols.",
+  "description_full": "One toolbar button opens a hub with eight tools:\n\n- Fab Rules: sets Board Setup constraints and DRC to Lion Circuits capabilities (MII / Custom / Rush, 1-3 oz) and can make them the default for new projects.\n- Net Setup: enter voltage and current per net; it computes IPC-2221 trace width, clearance and via size/count, creates netclasses, adds the sizes to the toolbar dropdowns and writes DRC rules that enforce them.\n- Power Trace: size the selected net from V/A, widen its traces, route with the right width.\n- Power Pours: copper around regulator pad groups, GND pours, plane vias for pads a pour would cut off, GND stitching vias.\n- Autoroute H/V: Freerouting with horizontal top / vertical bottom layer preference; never shrinks traces below the netclass width.\n- Silk Beautify: clean reference placement, net names on connector pins, values to Fab.\n- 3D Models: gives footprints without a model (e.g. Eagle imports) the matching KiCad library 3D model, aligned by pad geometry.\n- Eagle -> KiCad Symbols: swaps imported Eagle schematic symbols for KiCad library symbols, refusing to save if the netlist changes.\n\nAutoroute needs Java 21+ and freerouting.jar (see README).",
+  "identifier": "com.github.sudo-atharva.myplugin",
+  "type": "plugin",
+  "author": {
+    "name": "Atharva Tikle",
+    "contact": {
+      "github": "https://github.com/sudo-atharva"
+    }
+  },
+  "license": "MIT",
+  "resources": {
+    "homepage": "https://github.com/sudo-atharva/kicad-myplugin"
+  },
+  "versions": [
+    {
+      "version": "1.0.0",
+      "status": "testing",
+      "kicad_version": "10.0",
+      "runtime": "swig"
+    }
+  ]
+}
