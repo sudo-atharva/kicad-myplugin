@@ -56,14 +56,22 @@ TOOLS = [
      _tool("fab_rules", "FabRules")),
     ("net_setup", "Net Setup", "Volts + amps per net -> trace width, clearance, vias. Netclasses + DRC rules.",
      _tool("net_setup", "NetSetup")),
-    ("power_trace", "Power Trace", "Selected net: size it from V/A, widen its traces, then route with X.",
+    ("power_trace", "Power Trace", "Selected net: size it from V/A, widen its traces, then route (W, or X on default keys).",
      _tool("power_trace", "PowerTrace")),
-    ("power_pours", "Power Pours", "Copper around regulators, GND pours, plane vias, GND stitching.",
+    ("copper_path", "Copper Path", "Wide copper that follows a net's traces (datasheet-style), keeps clearance; drag + refresh.",
+     _tool("copper_path", "CopperPath")),
+    ("power_pours", "Power Pours", "Copper around regulators, GND pours, plane vias for cut-off pads.",
      _tool("power_pours", "PowerPours")),
+    ("stitch", "Via Stitching", "ViaStitcher by weirdgyn: select a zone, fill it with a stitching via grid.",
+     _tool("viastitcher", "ViaStitcherPlugin")),
     ("autoroute", "Autoroute H/V", "Freerouting: horizontal on top, vertical on bottom. Never shrinks traces.",
      _tool("autoroute_hv", "AutorouteHV")),
     ("silk", "Silk Beautify", "Clean reference placement, net names on connector pins, values to Fab.",
      _tool("silk_beautify", "SilkBeautify")),
+    ("docs", "Docs (PcbDraw)", "PcbDraw by yaqwsx: front/back drawings + renders into the project's docs folder.",
+     _tool("docs_pcbdraw", "PcbDrawDocs")),
+    ("freecad", "FreeCAD (StepUp)", "Open in FreeCAD/KiCad StepUp and stay in sync both ways, no restarts.",
+     _tool("freecad_stepup", "FreeCADStepUp")),
     ("models3d", "3D Models", "Give every footprint without a model the matching KiCad 3D model.",
      _run_models3d),
     ("symbols", "Eagle -> KiCad Symbols", "Swap Eagle schematic symbols for KiCad ones, netlist-checked.",
@@ -106,8 +114,8 @@ class Hub(object):
             row.Add(btn, 0, wx.ALIGN_TOP)
             row.Add(col, 0, wx.LEFT | wx.ALIGN_CENTER_VERTICAL, 10)
             grid.Add(row, 0, wx.EXPAND)
-        hint = wx.StaticText(self.dlg, label="Suggested order: Fab Rules -> Net Setup -> place parts -> Power Pours "
-                                              "-> Autoroute H/V / Power Trace -> Silk Beautify -> DRC")
+        hint = wx.StaticText(self.dlg, label="Suggested order: Fab Rules -> Net Setup -> place parts -> Power Pours -> "
+                                              "Via Stitching -> Autoroute H/V / Power Trace -> Silk Beautify -> DRC -> Docs")
         s = wx.BoxSizer(wx.VERTICAL)
         s.Add(grid, 0, wx.ALL, 16)
         s.Add(hint, 0, wx.LEFT | wx.RIGHT, 16)
@@ -146,3 +154,7 @@ class MyPlugin(pcbnew.ActionPlugin):
 
 
 MyPlugin().register()
+
+# second toolbar button: re-form Copper Paths after dragging traces (used often, so one click)
+from .copper_path import RefreshCopperPaths  # noqa: E402
+RefreshCopperPaths().register()

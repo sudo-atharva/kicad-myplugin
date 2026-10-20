@@ -101,15 +101,18 @@
 <!-- PAGE 2: MyPlugin -->
 <section class="page">
   <h1>MyPlugin workflow</h1>
-  <div class="sub">One toolbar button → hub with eight tools. Run them in this order.</div>
+  <div class="sub">One toolbar button → hub with twelve tools (+ a Refresh Copper Paths button). Run them in this order.</div>
   <table>
     <tr><th>#</th><th>Tool</th><th>What it does</th><th>When</th></tr>
     <tr><td>1</td><td>Fab Rules</td><td>Board Setup constraints + Default netclass + DRC rules = Lion Circuits limits (MII 6/6 mil, 0.35 mm drill, 0.66 mm via…). Can set it as the default for every new project.</td><td>first, once per board</td></tr>
     <tr><td>2</td><td>Net Setup</td><td>Volts + amps per net → IPC-2221 width, clearance, via size and count. Creates netclasses, fills the width/via dropdowns, writes DRC rules so thin power traces become DRC errors.</td><td>after schematic sync</td></tr>
-    <tr><td>3</td><td>Power Pours</td><td>Copper around regulator pad groups, GND pours, plane vias for pads a pour would isolate, GND stitching. Skips pours that would make islands and tells you why.</td><td>after placement</td></tr>
-    <tr><td>4</td><td>Autoroute H/V</td><td>Freerouting: horizontal top, vertical bottom. Uses your netclasses; never shrinks a trace to make it fit; whatever doesn't fit stays unrouted.</td><td>signals</td></tr>
-    <tr><td>5</td><td>Power Trace</td><td>Select a pad/trace → V/A → netclass + widen existing traces → press <kbd>W</kbd> and drag.</td><td>power nets by hand</td></tr>
-    <tr><td>6</td><td>Silk Beautify</td><td>Reference placement, net names on connector pins, values to Fab; lists what it couldn't place.</td><td>last, before DRC</td></tr>
+    <tr><td>3</td><td>Power Pours / Copper Path</td><td>Pours around regulator pad groups + plane vias. Copper Path: route the net (W), pick a width and 45&deg;/round corners - wide copper that follows the traces, keeps clearance and narrows into pin rows; after dragging press <i>Refresh Copper Paths</i>.</td><td>after placement</td></tr>
+    <tr><td>4</td><td>Via Stitching</td><td>ViaStitcher (bundled): select the GND zone, fill it with a stitching-via grid.</td><td>after pours</td></tr>
+    <tr><td>5</td><td>Autoroute H/V</td><td>Freerouting: horizontal top, vertical bottom. Uses your netclasses; never shrinks a trace to make it fit.</td><td>signals</td></tr>
+    <tr><td>6</td><td>Power Trace</td><td>Select a pad/trace &rarr; V/A &rarr; netclass + widen existing traces &rarr; press <kbd>W</kbd> and drag.</td><td>power nets by hand</td></tr>
+    <tr><td>7</td><td>Silk Beautify</td><td>Reference placement, net names on connector pins, values to Fab; lists what it couldn't place.</td><td>last, before DRC</td></tr>
+    <tr><td>8</td><td>Docs (PcbDraw)</td><td>Front/back drawings + renders into 04_Docs/.</td><td>at the end</td></tr>
+    <tr><td>&mdash;</td><td>FreeCAD (StepUp)</td><td>Opens the board in FreeCAD with StepUp loaded; FreeCAD reloads when KiCad saves; Push buttons send changes back and KiCad reloads - no restarts.</td><td>enclosure work</td></tr>
     <tr><td>—</td><td>3D Models</td><td>Matches each footprint without a model to a KiCad library footprint by pad geometry and attaches its 3D model.</td><td>after an Eagle import</td></tr>
     <tr><td>—</td><td>Eagle → KiCad Symbols</td><td>Swaps imported Eagle symbols for KiCad ones; keeps Eagle pin numbers; refuses to save if the netlist changes.</td><td>after an Eagle import</td></tr>
   </table>

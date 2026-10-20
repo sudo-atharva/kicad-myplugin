@@ -1,14 +1,15 @@
-"""Power Pours + GND stitching for KiCad 10.
+"""Power Pours for KiCad 10 (GND stitching: vendored ViaStitcher, see viastitcher/).
 
 1. Power pours: for each power net (Net Setup classes NS_<V>V_<I>A with I >= MIN_AMPS, or nets you pick),
    pads are clustered (regulator pin + caps + diode...) and each cluster gets a copper zone around it.
    Higher current = higher priority. Big power pads (regulator tabs) get solid zone connection for heat.
 2. GND pour on every copper layer, lowest priority.
-3. Stitching: GND via grid wherever GND copper is solid on all layers, clear of pads/holes/parts.
+3. Plane vias: a pad that a pour would cut off from its own zone gets a via + stub down to its plane.
+GND stitching grids: use the bundled ViaStitcher (hub > Via Stitching) on the selected GND zone.
 
 Everything generated is tagged (zone names PP_*, via group PP_STITCH): rerunning replaces it.
 Toolbar button in PCB editor, or CLI:
-  python power_pours.py board.kicad_pcb [--nets "+24V,3V3"] [--pitch 5] [--no-stitch]
+  python power_pours.py board.kicad_pcb [--nets "+24V,3V3"]
 """
 import math, re
 import pcbnew
@@ -318,93 +319,24 @@ def make_pours(board, nets):
     return zones, warn
 
 
-def stitch(board, pitch_mm=5.0, avoid_parts=True):
-    """GND via grid where every copper layer has solid GND fill around the via."""
-    gnd_zones = [z for z in board.Zones() if is_gnd(z.GetNetname()) and not z.GetIsRuleArea()]
-    if not gnd_zones:
-        return 0
-    net = gnd_zones[0].GetNet()
-    copper = list(board.GetEnabledLayers().CuStack())
-    fills = {l: [z.GetFilledPolysList(l) for z in gnd_zones if z.IsOnLayer(l) and z.GetNetCode() == net.GetNetCode()]
-             for l in copper}
-    if not all(fills.values()):
-        return 0
-    ds = board.GetDesignSettings()
-    nc = ds.m_NetSettings.GetEffectiveNetClass(net.GetNetname())  # Net Setup DRC rules apply to these vias too
-    dia, drill = nc.GetViaDiameter(), nc.GetViaDrill()
-    r = dia // 2 + MM(0.05)
-    hole_gap = max(ds.m_HoleToHoleMin, MM(0.25))
-    keep = []  # (x, y, radius) of holes and pads to stay away from
-    for p in board.GetPads():
-        b = p.GetBoundingBox()
-        keep.append((b.GetLeft(), b.GetTop(), b.GetRight(), b.GetBottom()))
-    for t in board.GetTracks():
-        if t.GetClass() == "PCB_VIA":
-            b = t.GetBoundingBox()
-            keep.append((b.GetLeft() - hole_gap, b.GetTop() - hole_gap, b.GetRight() + hole_gap, b.GetBottom() + hole_gap))
-    if avoid_parts:
-        for fp in board.GetFootprints():
-            b = fp.GetBoundingBox(False, False)
-            keep.append((b.GetLeft(), b.GetTop(), b.GetRight(), b.GetBottom()))
-    clr = MM(0.2)
-
-    def blocked(x, y):
-        for x0, y0, x1, y1 in keep:
-            if x0 - r - clr < x < x1 + r + clr and y0 - r - clr < y < y1 + r + clr:
-                return True
-        return False
-
-    ring = [(math.cos(a) * r, math.sin(a) * r) for a in [i * math.pi / 4 for i in range(8)]] + [(0, 0)]
-
-    def solid(x, y):
-        return all(any(all(f.Contains(pcbnew.VECTOR2I(int(x + dx), int(y + dy))) for dx, dy in ring) for f in fl)
-                   for fl in fills.values())
-
-    e = board.GetBoardEdgesBoundingBox()
-    step = MM(pitch_mm)
-    group = pcbnew.PCB_GROUP(board)
-    group.SetName(GROUP)
-    board.Add(group)
-    n = 0
-    y = e.GetTop() + step // 2
-    while y < e.GetBottom():
-        x = e.GetLeft() + step // 2
-        while x < e.GetRight():
-            if not blocked(x, y) and solid(x, y):
-                v = pcbnew.PCB_VIA(board)
-                v.SetPosition(pcbnew.VECTOR2I(int(x), int(y)))
-                v.SetWidth(dia)
-                v.SetDrill(drill)
-                v.SetNet(net)
-                board.Add(v)
-                group.AddItem(v)
-                n += 1
-            x += step
-        y += step
-    return n
-
-
-def run(board, nets=None, pitch_mm=5.0, do_stitch=True):
+def run(board, nets=None):
+    """Pours + plane vias. GND stitching is ViaStitcher's job (MyPlugin hub > Via Stitching)."""
     clear_generated(board)
     nets = nets if nets is not None else power_nets(board)
     zones, warn = make_pours(board, nets)
-    filler = pcbnew.ZONE_FILLER(board)
-    filler.Fill(board.Zones())
-    vias = stitch(board, pitch_mm) if do_stitch else 0
-    if vias:
-        filler.Fill(board.Zones())  # vias join the GND fill
+    pcbnew.ZONE_FILLER(board).Fill(board.Zones())
     report = []
     for z in zones:
         report.append("%-20s %-6s %6.0f mm2" % (z.GetZoneName(), board.GetLayerName(z.GetLayer()),
                                                 z.CalculateFilledArea() / 1e12))
-    return report, vias, warn
+    return report, warn
 
 
 class PowerPours(pcbnew.ActionPlugin):
     def defaults(self):
-        self.name = "Power Pours + GND Stitching"
+        self.name = "Power Pours"
         self.category = "Routing"
-        self.description = "Pour copper around power-net pads (regulators), GND planes, stitching vias"
+        self.description = "Pour copper around power-net pads (regulators), GND planes, plane vias"
         self.show_toolbar_button = True
 
     def Run(self):
@@ -420,29 +352,17 @@ class PowerPours(pcbnew.ActionPlugin):
         for i, n in enumerate(names):
             lst.Check(i, n in found)
         s.Add(lst, 1, wx.EXPAND | wx.ALL, 6)
-        row = wx.BoxSizer(wx.HORIZONTAL)
-        st = wx.CheckBox(dlg, label="GND stitching vias, pitch mm:")
-        st.SetValue(True)
-        pitch = wx.TextCtrl(dlg, value="5", size=(50, -1))
-        row.Add(st, 0, wx.ALIGN_CENTER_VERTICAL)
-        row.Add(pitch, 0, wx.LEFT, 4)
-        s.Add(row, 0, wx.ALL, 6)
         s.Add(dlg.CreateButtonSizer(wx.OK | wx.CANCEL), 0, wx.ALL | wx.ALIGN_RIGHT, 8)
         dlg.SetSizer(s)
         if dlg.ShowModal() != wx.ID_OK:
             dlg.Destroy()
             return
         chosen = {names[i]: found.get(names[i], MIN_AMPS) for i in lst.GetCheckedItems()}
-        try:
-            p = float(pitch.GetValue())
-        except ValueError:
-            p = 5.0
-        do_st = st.GetValue()
         dlg.Destroy()
-        report, vias, warn = run(board, chosen, p, do_st)
+        report, warn = run(board, chosen)
         pcbnew.Refresh()
-        wx.MessageBox("\n".join(report) + "\n\nStitching vias: %d" % vias +
-                      ("\n\nWARNINGS:\n" + "\n".join(warn) if warn else ""), "Power Pours")
+        wx.MessageBox("\n".join(report) + ("\n\nWARNINGS:\n" + "\n".join(warn) if warn else "") +
+                      "\n\nNext: GND stitching - select the GND zone, then MyPlugin > Via Stitching.", "Power Pours")
 
 
 def _selfcheck():
@@ -459,8 +379,6 @@ if __name__ == "__main__":
     ap.add_argument("board", nargs="?")
     ap.add_argument("-o", "--out")
     ap.add_argument("--nets", help="comma list; default = Net Setup classes >= %g A" % MIN_AMPS)
-    ap.add_argument("--pitch", type=float, default=5.0)
-    ap.add_argument("--no-stitch", action="store_true")
     a = ap.parse_args()
     _selfcheck()
     if not a.board:
@@ -468,9 +386,8 @@ if __name__ == "__main__":
         raise SystemExit
     b = pcbnew.LoadBoard(a.board)
     nets = {n: MIN_AMPS for n in a.nets.split(",")} if a.nets else None
-    report, vias, warn = run(b, nets, a.pitch, not a.no_stitch)
+    report, warn = run(b, nets)
     pcbnew.SaveBoard(a.out or a.board, b)
     print("\n".join(report))
-    print("stitching vias:", vias)
     for w in warn:
         print("WARNING:", w)

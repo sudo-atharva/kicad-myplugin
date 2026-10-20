@@ -72,7 +72,8 @@ def route(board, against=AGAINST, passes=20, jar=None, log=print, tick=None):
            "--router.automatic_neckdown=false"]
     log("running: " + " ".join(cmd))
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window popping up on Windows
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, creationflags=flags)
+    # cwd = its temp folder: Freerouting drops a logs/ folder into its working directory
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, creationflags=flags, cwd=d)
     tail = []
     for line in p.stdout:  # progress lines; tick() may return False to cancel
         tail = (tail + [line])[-30:]

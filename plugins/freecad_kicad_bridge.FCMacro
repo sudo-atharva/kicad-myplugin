@@ -1,0 +1,200 @@
+# -*- coding: utf-8 -*-
+"""MyPlugin KiCad <-> FreeCAD bridge (runs inside FreeCAD, uses the KiCad StepUp workbench).
+
+Started by MyPlugin > FreeCAD (StepUp) with env MYPLUGIN_PCB=<board.kicad_pcb>, MYPLUGIN_KICAD_PY=<KiCad python>.
+- loads the board with StepUp (no workbench clicking, no file picking)
+- auto-reloads when the .kicad_pcb changes on disk (you press Ctrl+S in KiCad)
+- "Pull from KiCad": asks KiCad to save (IPC API), then reloads here
+- "Push part moves" / "Push outline": KiCad saves first, StepUp writes the board, KiCad reloads it (IPC revert)
+  -> KiCad never has to be closed, FreeCAD never has to be restarted.
+KiCad StepUp is AGPL (https://github.com/easyw/kicadStepUpMod); this macro only calls it.
+"""
+import os, subprocess, sys, time, atexit
+import FreeCAD, FreeCADGui
+from PySide import QtCore, QtGui
+
+PCB = os.environ.get("MYPLUGIN_PCB", "")
+KPY = os.environ.get("MYPLUGIN_KICAD_PY", "")
+TEST = os.environ.get("MYPLUGIN_TEST", "")
+LOCK = PCB + ".fcbridge.lock"
+NOWIN = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
+def log(msg):
+    FreeCAD.Console.PrintMessage("[KiCad bridge] %s\n" % msg)
+
+
+def kicad(call):
+    """Run a kipy call against the board open in KiCad. call: 'save' or 'revert'. Returns (ok, message)."""
+    if not KPY or not os.path.exists(KPY):
+        return False, "KiCad python not found"
+    if call not in ("save", "revert"):
+        return False, "bad call"
+    # no % formatting here: the script itself contains format strings (that was the TypeError)
+    code = "\n".join([
+        "import os, sys",
+        "from kipy import KiCad",
+        "b = KiCad().get_board()",
+        "want = os.path.basename(sys.argv[1]).lower()",
+        "if b.name.lower() != want:",
+        "    print('KiCad has ' + b.name + ' open, not ' + want)",
+        "    sys.exit(2)",
+        "b." + call + "()",
+        "print('ok')",
+    ])
+    try:
+        r = subprocess.run([KPY, "-c", code, PCB], capture_output=True, text=True, timeout=60, creationflags=NOWIN)
+    except Exception as e:
+        return False, str(e)
+    out = (r.stdout + r.stderr).strip().splitlines()
+    return r.returncode == 0, (out[-1] if out else "")
+
+
+class Bridge(QtCore.QObject):
+    def __init__(self):
+        super().__init__()
+        self.mtime = self._mtime()
+        self.ignore_until = 0
+        self.doc = None
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.poll)
+        self.timer.start(1500)
+        self._dock()
+
+    def _mtime(self):
+        try:
+            return os.path.getmtime(PCB)
+        except OSError:
+            return 0
+
+    # ---------- UI
+    def _dock(self):
+        mw = FreeCADGui.getMainWindow()
+        self.panel = QtGui.QDockWidget("KiCad Bridge", mw)
+        w = QtGui.QWidget()
+        lay = QtGui.QVBoxLayout(w)
+        self.status = QtGui.QLabel(os.path.basename(PCB))
+        self.status.setWordWrap(True)
+        self.auto = QtGui.QCheckBox("Auto-reload when KiCad saves")
+        self.auto.setChecked(True)
+        for text, fn in (("Pull from KiCad (save there, reload here)", self.pull),
+                         ("Push part moves to KiCad", self.push_moved),
+                         ("Push board outline to KiCad", self.push_outline),
+                         ("Reload from disk", self.reload)):
+            b = QtGui.QPushButton(text)
+            b.clicked.connect(fn)
+            lay.addWidget(b)
+        lay.addWidget(self.auto)
+        lay.addWidget(self.status)
+        lay.addStretch(1)
+        hint = QtGui.QLabel("Push part moves: select the moved 3D models first.")
+        hint.setWordWrap(True)
+        lay.addWidget(hint)
+        self.panel.setWidget(w)
+        mw.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.panel)
+
+    def say(self, msg):
+        self.status.setText("%s\n%s" % (os.path.basename(PCB), msg))
+        log(msg)
+
+    # ---------- load / reload
+    def load(self):
+        import kicadStepUptools as ksu
+        before = set(FreeCAD.listDocuments())
+        ksu.onLoadBoard(PCB)
+        new = [d for d in FreeCAD.listDocuments() if d not in before]
+        self.doc = new[0] if new else (FreeCAD.ActiveDocument.Name if FreeCAD.ActiveDocument else None)
+        self.mtime = self._mtime()
+        self.say("loaded %s" % time.strftime("%H:%M:%S"))
+
+    def reload(self):
+        view = None
+        try:
+            view = FreeCADGui.ActiveDocument.ActiveView.getCamera() if FreeCADGui.ActiveDocument else None
+        except Exception:
+            pass
+        if self.doc and self.doc in FreeCAD.listDocuments():
+            FreeCAD.closeDocument(self.doc)
+        self.load()
+        if view:
+            try:
+                FreeCADGui.ActiveDocument.ActiveView.setCamera(view)
+            except Exception:
+                pass
+
+    def poll(self):
+        m = self._mtime()
+        if m and m != self.mtime:
+            self.mtime = m
+            if time.time() < self.ignore_until:
+                return  # our own push; KiCad reloads, FreeCAD already has it
+            if self.auto.isChecked():
+                self.say("KiCad saved - reloading")
+                self.reload()
+
+    # ---------- KiCad -> FreeCAD
+    def pull(self):
+        ok, msg = kicad("save")
+        if not ok:
+            self.say("KiCad save failed: %s (save in KiCad, then Reload)" % msg)
+            return
+        self.reload()
+
+    # ---------- FreeCAD -> KiCad
+    def _push(self, fn_name):
+        import kicadStepUptools as ksu
+        ok, msg = kicad("save")  # write KiCad's latest edits first so StepUp merges into them
+        if not ok:
+            self.say("could not save KiCad first (%s) - push cancelled" % msg)
+            return
+        # answer StepUp's "push to which .kicad_pcb?" dialog with our board, whichever Qt module it uses
+        import PySide
+        classes = {QtGui.QFileDialog}
+        if hasattr(PySide, "QtWidgets"):
+            classes.add(PySide.QtWidgets.QFileDialog)
+        saved = [(c, c.__dict__.get("getSaveFileName")) for c in classes]
+        for c in classes:
+            c.getSaveFileName = staticmethod(lambda *a, **k: (PCB, "*.kicad_pcb"))
+        try:
+            self.ignore_until = time.time() + 6
+            getattr(ksu, fn_name)()
+        finally:
+            for c, orig in saved:
+                if orig is not None:
+                    c.getSaveFileName = orig
+                else:
+                    del c.getSaveFileName
+        self.mtime = self._mtime()
+        ok, msg = kicad("revert")
+        self.say("pushed; KiCad reloaded" if ok else "pushed; reload KiCad yourself (File > Revert): %s" % msg)
+
+    def push_moved(self):
+        self._push("PushMoved")
+
+    def push_outline(self):
+        self._push("PushPCB")
+
+
+def main():
+    if not PCB or not os.path.exists(PCB):
+        QtGui.QMessageBox.warning(None, "KiCad bridge", "Board not found: %s" % PCB)
+        return
+    # StepUp saves/exports (FCStd, STEP, ...) go to the project's 07_FreeCAD/ if it has one, else next to the board
+    board_dir = os.path.dirname(os.path.abspath(PCB))
+    fc_dir = os.path.join(board_dir, "..", "07_FreeCAD")
+    os.chdir(fc_dir if os.path.isdir(fc_dir) else board_dir)
+    FreeCADGui.activateWorkbench("KiCadStepUpWB")
+    open(LOCK, "w").write(str(os.getpid()))
+    atexit.register(lambda: os.path.exists(LOCK) and os.remove(LOCK))
+    FreeCAD.__myplugin_bridge__ = Bridge()  # keep a reference alive
+    FreeCAD.__myplugin_bridge__.load()
+    if TEST:  # automated check: screenshot then quit
+        def shot():
+            FreeCADGui.ActiveDocument.ActiveView.viewIsometric()
+            FreeCADGui.SendMsgToActiveView("ViewFit")
+            FreeCADGui.ActiveDocument.ActiveView.saveImage(TEST, 1400, 900, "White")
+            FreeCADGui.getMainWindow().close()
+        QtCore.QTimer.singleShot(3000, shot)
+
+
+main()

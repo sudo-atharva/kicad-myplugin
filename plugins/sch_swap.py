@@ -164,7 +164,7 @@ def on_seg(p, a, b, tol=0.01):
 def netlist(sch):
     out = sch + ".net"
     subprocess.run([CLI, "sch", "export", "netlist", "--format", "kicadsexpr", "-o", out, sch],
-                   capture_output=True)
+                   capture_output=True, cwd=os.path.dirname(os.path.abspath(sch)))
     n = parse(open(out, encoding="utf-8").read())
     os.remove(out)
     nets = set()

@@ -12,7 +12,9 @@ import pcbnew
 
 KICAD = os.path.abspath(os.path.join(os.path.dirname(pcbnew.__file__), "..", "..", ".."))  # .../KiCad/10.0 (bin/Lib/site-packages/pcbnew.py)
 FP_DIR = os.path.join(KICAD, "share", "kicad", "footprints")
-CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fp_index.json")
+# library index cache: shared by all boards, so it lives in the user cache dir (never the plugin folder)
+CACHE = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), ".cache"),
+                     "MyPlugin", "fp_index.json")
 
 PAD_RE = re.compile(r'\(pad\s+"([^"]*)"\s+(\w+)\s+\w+.*?\(at\s+([-\d.]+)\s+([-\d.]+)(?:\s+([-\d.]+))?\)\s*\(size\s+([-\d.]+)\s+([-\d.]+)\)', re.S)
 MODEL_RE = re.compile(r'\(model\s+"?([^"\s)]+)"?.*?\(offset\s+\(xyz\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)\s*\).*?\(rotate\s+\(xyz\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)\s*\)', re.S)
@@ -88,6 +90,7 @@ def build_index():
                 idx.append({"lib": lib[:-7], "name": fn[:-10], "pads": pads, "body": bbox(pts),
                             "model": m.group(1), "off": [float(v) for v in m.group(2, 3, 4)],
                             "rot": [float(v) for v in m.group(5, 6, 7)]})
+    os.makedirs(os.path.dirname(CACHE), exist_ok=True)
     json.dump(idx, open(CACHE, "w"))
     return idx
 
@@ -285,7 +288,8 @@ def main():
     src = a.board
     if not src.endswith(".kicad_pcb"):
         pcb = os.path.splitext(src)[0] + ".kicad_pcb"
-        subprocess.run([os.path.join(KICAD, "bin", "kicad-cli"), "pcb", "import", "-o", pcb, src], check=True)
+        subprocess.run([os.path.join(KICAD, "bin", "kicad-cli"), "pcb", "import", "-o", pcb, src], check=True,
+                       cwd=os.path.dirname(os.path.abspath(src)))
         src = pcb
     out = a.out or src
     board = pcbnew.LoadBoard(src)
