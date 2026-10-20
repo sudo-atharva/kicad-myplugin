@@ -7,7 +7,7 @@
 - Values: moved from silkscreen to Fab.
 
 Toolbar button in PCB editor (Tools > External Plugins > Silk Beautify), or CLI:
-  "C:/Program Files/KiCad/10.0/bin/python.exe" silk_beautify.py board.kicad_pcb [-o out.kicad_pcb]
+  <KiCad python> silk_beautify.py board.kicad_pcb [-o out.kicad_pcb]
 """
 import re
 import pcbnew

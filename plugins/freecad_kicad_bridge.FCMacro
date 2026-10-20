@@ -28,19 +28,23 @@ def kicad(call):
     """Run a kipy call against the board open in KiCad. call: 'save' or 'revert'. Returns (ok, message)."""
     if not KPY or not os.path.exists(KPY):
         return False, "KiCad python not found"
-    if call not in ("save", "revert"):
+    # KiCad 10.0.5 crashes (kigal.dll access violation) on the IPC document commands board.save()/revert().
+    # So we trigger KiCad's own menu actions instead: exactly what Ctrl+S / File > Revert run.
+    actions = {"save": "common.Control.save", "revert": "common.Control.revert"}
+    if call not in actions:
         return False, "bad call"
-    # no % formatting here: the script itself contains format strings (that was the TypeError)
+    # no % formatting here: the script itself contains format strings
     code = "\n".join([
         "import os, sys",
         "from kipy import KiCad",
-        "b = KiCad().get_board()",
+        "k = KiCad()",
+        "b = k.get_board()",
         "want = os.path.basename(sys.argv[1]).lower()",
         "if b.name.lower() != want:",
         "    print('KiCad has ' + b.name + ' open, not ' + want)",
         "    sys.exit(2)",
-        "b." + call + "()",
-        "print('ok')",
+        "r = k.run_action('" + actions[call] + "')",
+        "print('ok', r)",
     ])
     try:
         r = subprocess.run([KPY, "-c", code, PCB], capture_output=True, text=True, timeout=60, creationflags=NOWIN)

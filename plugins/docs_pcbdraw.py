@@ -9,23 +9,24 @@ CLI: python docs_pcbdraw.py board.kicad_pcb [outdir]
 import os, subprocess, sys
 import pcbnew
 
-KICAD_BIN = os.path.abspath(os.path.join(os.path.dirname(pcbnew.__file__), "..", "..")) # bin/Lib/site-packages -> bin
-PY = os.path.join(KICAD_BIN, "python.exe" if os.name == "nt" else "python3")
-CLI = os.path.join(KICAD_BIN, "kicad-cli.exe" if os.name == "nt" else "kicad-cli")
+try:
+    from . import kpaths  # inside the MyPlugin package
+except ImportError:
+    import kpaths  # run as a script from this folder
+
+PY = kpaths.kicad_python()
+CLI = kpaths.kicad_cli()
 RUN = "import sys; from pcbdraw.ui import run; sys.argv[0] = 'pcbdraw'; run()"
 NOWIN = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def installed():
-    r = subprocess.run([PY, "-c", "import pcbdraw.ui"], capture_output=True, creationflags=NOWIN)
-    return r.returncode == 0
+    return kpaths.py_has("pcbdraw.ui")
 
 
 def install():
     """pip --user into KiCad's Python (LnkParse3 is a Windows-only dependency pcbdraw forgets)."""
-    r = subprocess.run([PY, "-m", "pip", "install", "--user", "--disable-pip-version-check", "pcbdraw", "LnkParse3"],
-                       capture_output=True, text=True, creationflags=NOWIN)
-    return r.returncode == 0, (r.stdout + r.stderr)[-1500:]
+    return kpaths.pip_install(*(["pcbdraw", "LnkParse3"] if os.name == "nt" else ["pcbdraw"]))
 
 
 def out_dir(board_file):

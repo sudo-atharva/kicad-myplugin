@@ -13,10 +13,9 @@ from collections import defaultdict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sexp import parse, dump, find, first, walk, prop, Q
 
-import pcbnew  # only to locate KiCad
-KICAD = os.path.abspath(os.path.join(os.path.dirname(pcbnew.__file__), "..", "..", ".."))
-SYMLIB = os.path.join(KICAD, "share", "kicad", "symbols")
-CLI = os.path.join(KICAD, "bin", "kicad-cli")
+import kpaths  # this folder is on sys.path (inserted above)
+SYMLIB = kpaths.symbol_dir()
+CLI = kpaths.kicad_cli()
 
 # Eagle symbol name (regex) -> (KiCad symbol, pin mode). Modes: num = same number, name = by pin name/alias
 MAP = [

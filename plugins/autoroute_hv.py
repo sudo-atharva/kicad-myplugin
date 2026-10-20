@@ -7,22 +7,38 @@ and reports how much of each layer actually follows its direction.
 Toolbar button in PCB editor, or CLI:
   python autoroute_hv.py board.kicad_pcb [-o out.kicad_pcb] [--against 8] [--passes 20]
 """
-import math, os, subprocess, tempfile
+import json, math, os, subprocess, tempfile, urllib.request
 import pcbnew
 
+try:
+    from . import kpaths  # inside the MyPlugin package
+except ImportError:
+    import kpaths  # run as a script from this folder
+
 JAR_URL = "https://github.com/freerouting/freerouting/releases"
+JAVA_URL = "https://adoptium.net/temurin/releases/"
 
 
 def find_jar():
-    """FREEROUTING_JAR env, then freerouting.jar next to this file, then ~/.kicad-mcp/freerouting.jar."""
-    for p in (os.environ.get("FREEROUTING_JAR"), os.path.join(os.path.dirname(os.path.abspath(__file__)), "freerouting.jar"),
+    """FREEROUTING_JAR env, then MyPlugin's per-user folder, then next to this file, then ~/.kicad-mcp (MCP setups)."""
+    for p in (os.environ.get("FREEROUTING_JAR"), os.path.join(kpaths.user_data_dir(), "freerouting.jar"),
+              os.path.join(os.path.dirname(os.path.abspath(__file__)), "freerouting.jar"),
               os.path.join(os.path.expanduser("~"), ".kicad-mcp", "freerouting.jar")):
         if p and os.path.exists(p):
             return p
     return None
 
 
-JAR = find_jar()
+def download_jar():
+    """Latest official Freerouting release jar -> MyPlugin's per-user folder. Returns the path."""
+    api = "https://api.github.com/repos/freerouting/freerouting/releases/latest"
+    rel = json.load(urllib.request.urlopen(urllib.request.Request(api, headers={"User-Agent": "MyPlugin"}), timeout=60))
+    asset = next(a for a in rel["assets"] if a["name"].endswith(".jar") and "freerouting" in a["name"].lower())
+    data = urllib.request.urlopen(urllib.request.Request(asset["browser_download_url"], headers={"User-Agent": "MyPlugin"}),
+                                  timeout=300).read()
+    out = os.path.join(kpaths.user_data_dir(), "freerouting.jar")
+    open(out, "wb").write(data)
+    return out
 AGAINST = 8.0     # cost multiplier for routing against a layer's direction (Freerouting default ~2.5)
 VIA_COST = 50
 
@@ -57,8 +73,11 @@ def direction_report(board):
 def route(board, against=AGAINST, passes=20, jar=None, log=print, tick=None):
     jar = jar or find_jar()
     if not jar:
-        raise RuntimeError("Freerouting not found. Download freerouting-<ver>.jar from %s and save it as "
-                           "freerouting.jar next to autoroute_hv.py (needs Java 21+)." % JAR_URL)
+        raise RuntimeError("Freerouting not found. Download freerouting-<ver>.jar from %s and save it as %s"
+                           % (JAR_URL, os.path.join(kpaths.user_data_dir(), "freerouting.jar")))
+    java = kpaths.java()
+    if not java:
+        raise RuntimeError("Java not found. Install a current Java (e.g. Temurin 25) from %s" % JAVA_URL)
     d = tempfile.mkdtemp(prefix="autoroute_hv_")
     dsn, ses, rules = (os.path.join(d, n) for n in ("board.dsn", "board.ses", "hv.rules"))
     if not pcbnew.ExportSpecctraDSN(board, dsn):
@@ -66,7 +85,7 @@ def route(board, against=AGAINST, passes=20, jar=None, log=print, tick=None):
     open(rules, "w").write(rules_text(board, against, "board"))  # Freerouting's design name = DSN file stem
     # fanout off: its neck-down stubs ignore netclass widths (0.15 mm traces on a 0.2 mm board);
     # it must be a CLI setting, Freerouting 2.5 ignores "(fanout off)" in the rules file
-    cmd = ["java", "-jar", jar, "-de", dsn, "-dr", rules, "-do", ses,
+    cmd = [java, "-jar", jar, "-de", dsn, "-dr", rules, "-do", ses,
            "--router.autorouter.max_passes=%d" % passes, "--router.fanout.enabled=false",
            # never shrink traces below the netclass width to squeeze a net through ("necked retry")
            "--router.automatic_neckdown=false"]
@@ -82,7 +101,11 @@ def route(board, against=AGAINST, passes=20, jar=None, log=print, tick=None):
             raise RuntimeError("cancelled")
     p.wait()
     if not os.path.exists(ses):
-        raise RuntimeError("Freerouting produced no session:\n" + "".join(tail)[-2000:])
+        out = "".join(tail)
+        if "UnsupportedClassVersionError" in out:
+            raise RuntimeError("This Freerouting needs a newer Java than %s.\nInstall the current Java (Temurin) from %s "
+                               "and run Autoroute again." % (java, JAVA_URL))
+        raise RuntimeError("Freerouting produced no session:\n" + out[-2000:])
     if not pcbnew.ImportSpecctraSES(board, ses):
         raise RuntimeError("SES import failed")
     return ses
@@ -112,11 +135,23 @@ class AutorouteHV(pcbnew.ActionPlugin):
     def Run(self):
         import wx
         board = pcbnew.GetBoard()
-        if not find_jar():
-            wx.MessageBox("Freerouting not found.\n\nDownload freerouting-<version>.jar from\n%s\nand save it as "
-                          "freerouting.jar in:\n%s\n\n(needs Java 21 or newer)"
-                          % (JAR_URL, os.path.dirname(os.path.abspath(__file__))), "Autoroute H/V")
+        if not kpaths.java():
+            wx.MessageBox("Java was not found on this computer.\nFreerouting needs a current Java - install Temurin from\n%s\n"
+                          "then run Autoroute again." % JAVA_URL, "Autoroute H/V")
             return
+        if not find_jar():
+            if wx.MessageBox("Freerouting is not installed.\nDownload the latest official release now (~65 MB, from\n%s)?"
+                             % JAR_URL, "Autoroute H/V", wx.YES_NO) != wx.YES:
+                return
+            busy = wx.BusyInfo("Downloading Freerouting...")
+            try:
+                download_jar()
+            except Exception as e:
+                del busy
+                wx.MessageBox("Download failed: %s\n\nGet freerouting-<version>.jar from %s and save it as\n%s"
+                              % (e, JAR_URL, os.path.join(kpaths.user_data_dir(), "freerouting.jar")), "Autoroute H/V")
+                return
+            del busy
         prog = wx.ProgressDialog("Autoroute H/V", "Starting Freerouting...", parent=None,
                                  style=wx.PD_APP_MODAL | wx.PD_CAN_ABORT | wx.PD_ELAPSED_TIME)
 

@@ -5,16 +5,20 @@ library footprint whose pads match geometrically, then copy its 3D model with
 the offset/rotation needed to line up with these pads. No match -> generated box.
 
 Usage (KiCad's python):
-  "C:/Program Files/KiCad/10.0/bin/python.exe" eagle3d.py board.kicad_pcb|board.brd [-o out.kicad_pcb]
+  <KiCad python> eagle3d.py board.kicad_pcb|board.brd [-o out.kicad_pcb]
 """
 import json, math, os, re, subprocess, sys, argparse
 import pcbnew
 
-KICAD = os.path.abspath(os.path.join(os.path.dirname(pcbnew.__file__), "..", "..", ".."))  # .../KiCad/10.0 (bin/Lib/site-packages/pcbnew.py)
-FP_DIR = os.path.join(KICAD, "share", "kicad", "footprints")
-# library index cache: shared by all boards, so it lives in the user cache dir (never the plugin folder)
-CACHE = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), ".cache"),
-                     "MyPlugin", "fp_index.json")
+try:
+    from . import kpaths  # inside the MyPlugin package
+except ImportError:
+    import kpaths  # run as a script from this folder
+
+FP_DIR = kpaths.footprint_dir()
+MODEL_DIR = kpaths.model_dir()
+# library index cache: shared by all boards, so it lives in the per-user data dir (never the plugin folder)
+CACHE = os.path.join(kpaths.user_data_dir(), "fp_index.json")
 
 PAD_RE = re.compile(r'\(pad\s+"([^"]*)"\s+(\w+)\s+\w+.*?\(at\s+([-\d.]+)\s+([-\d.]+)(?:\s+([-\d.]+))?\)\s*\(size\s+([-\d.]+)\s+([-\d.]+)\)', re.S)
 MODEL_RE = re.compile(r'\(model\s+"?([^"\s)]+)"?.*?\(offset\s+\(xyz\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)\s*\).*?\(rotate\s+\(xyz\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)\s*\)', re.S)
@@ -53,7 +57,9 @@ def norm(s):
 
 
 def model_exists(path):
-    p = re.sub(r"\$\{KICAD\d*_3DMODEL_DIR\}", os.path.join(KICAD, "share", "kicad", "3dmodels").replace("\\", "/"), path)
+    if not MODEL_DIR:
+        return False  # 3D model library not installed on this machine
+    p = re.sub(r"\$\{KICAD\d*_3DMODEL_DIR\}", MODEL_DIR.replace("\\", "/"), path)
     base = os.path.splitext(p)[0]
     return any(os.path.exists(base + ext) for ext in (".step", ".stp", ".wrl"))  # KiCad swaps step/wrl
 
@@ -61,6 +67,9 @@ def model_exists(path):
 def build_index():
     if os.path.exists(CACHE):
         return json.load(open(CACHE))
+    if not FP_DIR or not os.path.isdir(FP_DIR):
+        raise RuntimeError("KiCad's footprint library was not found on this machine. Install the KiCad libraries "
+                           "(footprints + 3D models) with the KiCad installer, then try again.")
     idx = []
     for lib in sorted(os.listdir(FP_DIR)):
         if not lib.endswith(".pretty"):
@@ -288,7 +297,7 @@ def main():
     src = a.board
     if not src.endswith(".kicad_pcb"):
         pcb = os.path.splitext(src)[0] + ".kicad_pcb"
-        subprocess.run([os.path.join(KICAD, "bin", "kicad-cli"), "pcb", "import", "-o", pcb, src], check=True,
+        subprocess.run([kpaths.kicad_cli(), "pcb", "import", "-o", pcb, src], check=True,
                        cwd=os.path.dirname(os.path.abspath(src)))
         src = pcb
     out = a.out or src

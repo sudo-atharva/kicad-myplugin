@@ -25,13 +25,23 @@ SERVICES = {
 COMMON = {"annular": 0.152, "edge": 0.3, "silk_h": 0.5842, "silk_w": 0.15, "slot": 0.8}
 DRU_BEGIN, DRU_END = "# BEGIN fab_rules (generated, edits here are overwritten)", "# END fab_rules"
 def _template_dir():
-    """KiCad's user template folder: KICAD_USER_TEMPLATE_DIR if KiCad set it, else <KiCad docs>/<ver>/template.
-    The plugin lives in <KiCad docs>/<ver>/(scripting|3rdparty)/plugins/<pkg>/, so <ver> is 4 levels up."""
+    """KiCad's user template folder, found without hard-coded paths:
+    1. KICAD_USER_TEMPLATE_DIR (KiCad sets it for plugins it runs)
+    2. <KiCad docs>/<ver>/ worked out from where the plugin is installed
+       (<KiCad docs>/<ver>/(scripting|3rdparty)/plugins/<pkg>/) - only if that really looks like KiCad's folder
+    3. <real Documents>/KiCad/<major.minor>/template (Documents follows OneDrive/redirection)"""
     env = os.environ.get("KICAD_USER_TEMPLATE_DIR")
     if env:
         return os.path.join(env, "default")
     ver_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-    return os.path.join(ver_dir, "template", "default")
+    if any(os.path.isdir(os.path.join(ver_dir, d)) for d in ("scripting", "3rdparty", "template")):
+        return os.path.join(ver_dir, "template", "default")
+    try:
+        from . import kpaths
+    except ImportError:
+        import kpaths
+    ver = ".".join(pcbnew.Version().split(".")[:2])  # "10.0.5" -> "10.0"
+    return os.path.join(kpaths.documents_dir(), "KiCad", ver, "template", "default")
 
 
 TEMPLATE = _template_dir()

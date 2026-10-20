@@ -31,10 +31,15 @@ Example: LM2596 buck converter placed with Fab Rules + Net Setup applied:
 
 **Manual:** copy the `plugins/` folder to `<KiCad documents>/10.0/scripting/plugins/myplugin/` and restart KiCad.
 
-Requirements: **KiCad 10.0**. Optional, per tool:
-- **Autoroute H/V:** Java 21+ and [`freerouting.jar`](https://github.com/freerouting/freerouting/releases) next to `autoroute_hv.py` (or set `FREEROUTING_JAR`).
-- **Docs (PcbDraw):** installed into KiCad's Python on first use (`pip install --user pcbdraw LnkParse3`).
-- **FreeCAD (StepUp):** FreeCAD 0.21+ (tested 1.1). KiCad StepUp is downloaded into FreeCAD on first use. Push/pull needs *Preferences › Plugins › Enable KiCad API*.
+Requirements: **KiCad 10.0** with its libraries. Nothing is hard-coded to one PC: KiCad, its libraries, `kicad-cli`, Java and FreeCAD are found through KiCad's own variables, `PATH` and the standard install locations (Windows, macOS, Linux; the Documents folder follows OneDrive/redirection). What a tool needs but the machine lacks is offered as a one-click install into a per-user folder:
+
+| Tool | Needs | If missing |
+|---|---|---|
+| Autoroute H/V | Java (current, e.g. Temurin 25) + Freerouting | Freerouting: downloaded from its official releases. Java: link to install it. |
+| Docs (PcbDraw) | PcbDraw | `pip install --user pcbdraw` into KiCad's Python |
+| FreeCAD (StepUp) | FreeCAD 0.21+ (tested 1.1), KiCad StepUp, kicad-python | StepUp downloaded into the FreeCAD user `Mod` folder FreeCAD reads; kicad-python pip-installed. Push/pull also needs *Preferences › Plugins › Enable KiCad API* (off by default). |
+
+Overrides if you keep tools elsewhere: `KICAD_CLI`, `FREEROUTING_JAR`, `FREECAD_EXE`, `JAVA_HOME`.
 
 ## Where files go
 
