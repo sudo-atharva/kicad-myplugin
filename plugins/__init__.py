@@ -14,13 +14,11 @@ def _run_models3d():
     import wx
     from . import eagle3d
     board = pcbnew.GetBoard()
-    busy = wx.BusyInfo("Matching footprints to KiCad 3D models...\n(first run indexes the library, ~20 s)")
-    try:
-        report = eagle3d.attach_models(board, os.path.dirname(board.GetFileName()) or HERE)
-    finally:
-        del busy
+    report = eagle3d.pick_and_apply(board, os.path.dirname(board.GetFileName()) or HERE)
+    if report is None:
+        return
     pcbnew.Refresh()
-    _show_text("3D Models", (eagle3d.summarize(report) if report else "Every footprint already has a 3D model.")
+    _show_text("3D Models", (eagle3d.summarize(report) if report else "Nothing to change.")
                + "\n\nOpen the 3D viewer (Alt+3) to check. Copper was not changed.")
 
 
@@ -52,10 +50,14 @@ def _tool(module, cls):
 
 
 TOOLS = [
+    ("project", "Project & Versions", "New project with 01_Source...07_FreeCAD + git; save versions, see history.",
+     _tool("project_git", "ProjectGit")),
     ("fab", "Fab Rules", "Set DRC to Lion Circuits capabilities (MII / Custom / Rush). Do this first.",
      _tool("fab_rules", "FabRules")),
     ("net_setup", "Net Setup", "Volts + amps per net -> trace width, clearance, vias. Netclasses + DRC rules.",
      _tool("net_setup", "NetSetup")),
+    ("array", "Array Place", "Place one LED+R (any channel) by hand, select it: all the others follow, live spacing.",
+     _tool("array_place", "ArrayPlace")),
     ("power_trace", "Power Trace", "Selected net: size it from V/A, widen its traces, then route (W, or X on default keys).",
      _tool("power_trace", "PowerTrace")),
     ("copper_path", "Copper Path", "Wide copper that follows a net's traces (datasheet-style), keeps clearance; drag + refresh.",
@@ -68,11 +70,13 @@ TOOLS = [
      _tool("autoroute_hv", "AutorouteHV")),
     ("silk", "Silk Beautify", "Clean reference placement, net names on connector pins, values to Fab.",
      _tool("silk_beautify", "SilkBeautify")),
-    ("docs", "Docs (PcbDraw)", "PcbDraw by yaqwsx: front/back drawings + renders into the project's docs folder.",
+    ("docs", "Docs", "Front/back drawings + 3D renders into 04_Docs. Quick (seconds) or PcbDraw (pretty, slow).",
      _tool("docs_pcbdraw", "PcbDrawDocs")),
+    ("bom", "BOM + CPL Export", "Grouped BOM (CSV for JLCPCB, JSON for scripts) + pick-and-place into 03_Manufacturing.",
+     _tool("bom_export", "BomExport")),
     ("freecad", "FreeCAD (StepUp)", "Open in FreeCAD/KiCad StepUp and stay in sync both ways, no restarts.",
      _tool("freecad_stepup", "FreeCADStepUp")),
-    ("models3d", "3D Models", "Give every footprint without a model the matching KiCad 3D model.",
+    ("models3d", "3D Models", "Pick each package's 3D model with a live preview: library matches or your own 3d_models/.",
      _run_models3d),
     ("symbols", "Eagle -> KiCad Symbols", "Swap Eagle schematic symbols for KiCad ones, netlist-checked.",
      _run_symbols),
@@ -97,7 +101,7 @@ class Hub(object):
         import wx
         self.choice = None
         self.dlg = wx.Dialog(None, title="MyPlugin", style=wx.DEFAULT_DIALOG_STYLE)
-        grid = wx.FlexGridSizer(0, 2, 10, 18)
+        grid = wx.FlexGridSizer(0, 3, 10, 18)
         for i, (icon, name, desc, _) in enumerate(TOOLS):
             bmp = wx.Bitmap(os.path.join(ICONS, icon + ".png"), wx.BITMAP_TYPE_PNG)
             btn = wx.BitmapButton(self.dlg, bitmap=bmp)
@@ -114,8 +118,9 @@ class Hub(object):
             row.Add(btn, 0, wx.ALIGN_TOP)
             row.Add(col, 0, wx.LEFT | wx.ALIGN_CENTER_VERTICAL, 10)
             grid.Add(row, 0, wx.EXPAND)
-        hint = wx.StaticText(self.dlg, label="Suggested order: Fab Rules -> Net Setup -> place parts -> Power Pours -> "
-                                              "Via Stitching -> Autoroute H/V / Power Trace -> Silk Beautify -> DRC -> Docs")
+        hint = wx.StaticText(self.dlg, label="Suggested order: Project -> Fab Rules -> Net Setup -> place parts / Array Place -> Power Pours -> "
+                                              "Via Stitching -> Autoroute H/V / Power Trace -> Silk Beautify -> DRC -> Docs -> BOM")
+        hint.Wrap(grid.CalcMin().x)
         s = wx.BoxSizer(wx.VERTICAL)
         s.Add(grid, 0, wx.ALL, 16)
         s.Add(hint, 0, wx.LEFT | wx.RIGHT, 16)
@@ -137,7 +142,7 @@ class MyPlugin(pcbnew.ActionPlugin):
     def defaults(self):
         self.name = "MyPlugin"
         self.category = "MyPlugin"
-        self.description = "Net setup, power traces and pours, H/V autoroute, silkscreen, 3D models, Eagle symbols"
+        self.description = "Project + git, net setup, array placement, pours, H/V autoroute, silkscreen, docs, BOM, 3D models"
         self.show_toolbar_button = True
         self.icon_file_name = os.path.join(ICONS, "myplugin.png")
         self.dark_icon_file_name = os.path.join(ICONS, "myplugin.png")

@@ -18,6 +18,8 @@ PLATING_MM = 0.025
 # IPC-2221 table 6-1 B2: (max volts, clearance mm); above 500 V: 0.005 mm/V
 B2 = [(15, 0.1), (30, 0.1), (50, 0.6), (100, 0.6), (150, 0.6), (170, 1.25), (250, 1.25), (300, 1.25), (500, 2.5)]
 SIGNAL_A = 0.3                      # at or below this (and <= 30 V) a net stays in Default
+MIN_AMPS = 0.5                      # every net is sized for at least this current unless you lower it
+NO_VIA_V = 24                       # nets at or above this voltage start with "no vias" ticked
 
 
 def ipc2221_area_mil2(amps, rise_c, k):
@@ -88,11 +90,21 @@ def paths(board):
     return base + ".kicad_pro", base + ".kicad_dru", base + ".netsetup.json"
 
 
-def apply(board, settings, rise_c=10, oz_outer=1.0, oz_inner=0.5):
-    """settings: {net: (volts, amps)}. Writes netclasses + DRC rules. Returns {class: (params, [nets])}."""
+def unpack(entry, min_amps=0.0):
+    """(volts, amps[, no_vias]) -> (volts, amps raised to min_amps, no_vias)."""
+    v, a = entry[0], entry[1]
+    return v, max(a, min_amps), bool(entry[2]) if len(entry) > 2 else abs(v) >= NO_VIA_V
+
+
+def apply(board, settings, rise_c=10, oz_outer=1.0, oz_inner=0.5, min_amps=MIN_AMPS):
+    """settings: {net: (volts, amps[, no_vias])}. Every net is sized for at least min_amps.
+    Writes netclasses + DRC rules. Returns {class: (params, [nets])}; apply.no_via lists the via-free nets."""
     mins = board_mins(board)
-    classes = {}
-    for net, (v, a) in settings.items():
+    classes, no_via = {}, []
+    for net, entry in settings.items():
+        v, a, nv = unpack(entry, min_amps)
+        if nv:
+            no_via.append(net)
         if a <= SIGNAL_A and abs(v) <= 30:
             continue
         classes.setdefault(class_name(v, a), (compute(v, a, rise_c, oz_outer, oz_inner, mins), []))[1].append(net)
@@ -128,9 +140,10 @@ def apply(board, settings, rise_c=10, oz_outer=1.0, oz_inner=0.5):
     board.SynchronizeNetsAndNetClasses(True)
     add_predefined_sizes(board.GetDesignSettings(), classes)
 
-    write_dru(dru, classes)
-    json.dump({"rise_c": rise_c, "oz_outer": oz_outer, "oz_inner": oz_inner,
-               "nets": {k: list(v) for k, v in settings.items()}}, open(store, "w"), indent=1)
+    write_dru(dru, classes, no_via)
+    json.dump({"rise_c": rise_c, "oz_outer": oz_outer, "oz_inner": oz_inner, "min_amps": min_amps,
+               "nets": {k: list(unpack(v)) for k, v in settings.items()}}, open(store, "w"), indent=1)
+    apply.no_via = sorted(no_via)
     return classes
 
 
@@ -168,9 +181,12 @@ def too_thin(board, classes):
     return out
 
 
-def write_dru(path, classes):
+def write_dru(path, classes, no_via=()):
     """Netclass width/via are only router defaults; these rules make DRC enforce them."""
     rules = [DRU_BEGIN]
+    for net in sorted(no_via):  # high-voltage / high-current nets stay on their layer: any via is a DRC error
+        rules.append('(rule "no vias on %s"\n  (condition "A.Type == \'Via\' && A.NetName == \'%s\'")\n'
+                     '  (constraint disallow via))' % (net, net))
     for name, (p, nets) in sorted(classes.items()):
         rules.append('(rule "%s min width"\n  (condition "A.NetClass == \'%s\'")\n'
                      '  (constraint track_width (min %.3fmm)))' % (name, name, p["width"]))
@@ -194,7 +210,7 @@ def load_settings(board):
     for n in sorted(board.GetNetsByName().keys(), key=str):
         n = str(n)
         if n:
-            nets[n] = tuple(saved["nets"].get(n, guess(n)))
+            nets[n] = unpack(saved["nets"].get(n, guess(n)))
     return saved, nets
 
 
@@ -223,12 +239,13 @@ class NetSetup(pcbnew.ActionPlugin):
         ctl = {}
         for key, label, val in (("rise_c", "Temp rise C", saved.get("rise_c", 10)),
                                 ("oz_outer", "Outer oz", saved.get("oz_outer", 1.0)),
-                                ("oz_inner", "Inner oz", saved.get("oz_inner", 0.5))):
+                                ("oz_inner", "Inner oz", saved.get("oz_inner", 0.5)),
+                                ("min_amps", "Min current A (every net)", saved.get("min_amps", MIN_AMPS))):
             top.Add(wx.StaticText(dlg, label=label), 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 4)
             ctl[key] = wx.TextCtrl(dlg, value=str(val), size=(50, -1))
             top.Add(ctl[key], 0, wx.ALL, 4)
         top.Add(wx.StaticText(dlg, label="  Nets <= %.1f A and <= 30 V stay Default" % SIGNAL_A), 0, wx.ALIGN_CENTER_VERTICAL)
-        cols = ["Net", "Pads", "Voltage V", "Current A", "Width mm", "Clear mm", "Via mm", "Vias"]
+        cols = ["Net", "Pads", "Voltage V", "Current A", "No vias", "Width mm", "Clear mm", "Via mm", "Vias"]
         g = wx.grid.Grid(dlg)
         g.CreateGrid(len(names), len(cols))
         for i, c in enumerate(cols):
@@ -243,21 +260,26 @@ class NetSetup(pcbnew.ActionPlugin):
 
         def refresh(row):
             try:
-                v, a = float(g.GetCellValue(row, 2)), float(g.GetCellValue(row, 3))
+                v, a = float(g.GetCellValue(row, 2)), max(float(g.GetCellValue(row, 3)), num("min_amps", 0))
             except ValueError:
                 return
+            nv = g.GetCellValue(row, 4) == "1"
             if a <= SIGNAL_A and abs(v) <= 30:
-                vals = ["Default"] + [""] * 3
+                vals = ["Default", "", "", "none" if nv else ""]
             else:
                 p = compute(v, a, num("rise_c", 10), num("oz_outer", 1), num("oz_inner", 0.5), mins)
-                vals = ["%.2f" % p["width"], "%.2f" % p["clearance"], "%.1f/%.1f" % (p["via_d"], p["via_drill"]), str(p["vias"])]
-            for c, val in enumerate(vals, 4):
+                vals = ["%.2f" % p["width"], "%.2f" % p["clearance"], "%.1f/%.1f" % (p["via_d"], p["via_drill"]),
+                        "none" if nv else str(p["vias"])]
+            for c, val in enumerate(vals, 5):
                 g.SetCellValue(row, c, val)
 
         for r, n in enumerate(names):
-            for c, val in enumerate([n, str(pads.get(n, 0)), "%g" % nets[n][0], "%g" % nets[n][1]]):
+            for c, val in enumerate([n, str(pads.get(n, 0)), "%g" % nets[n][0], "%g" % nets[n][1],
+                                     "1" if nets[n][2] else ""]):
                 g.SetCellValue(r, c, val)
-            for c in (0, 1, 4, 5, 6, 7):
+            g.SetCellRenderer(r, 4, wx.grid.GridCellBoolRenderer())
+            g.SetCellEditor(r, 4, wx.grid.GridCellBoolEditor())
+            for c in (0, 1, 5, 6, 7, 8):
                 g.SetReadOnly(r, c)
             refresh(r)
         g.AutoSizeColumns()
@@ -276,10 +298,11 @@ class NetSetup(pcbnew.ActionPlugin):
         settings = {}
         for r, n in enumerate(names):
             try:
-                settings[n] = (float(g.GetCellValue(r, 2)), float(g.GetCellValue(r, 3)))
+                settings[n] = (float(g.GetCellValue(r, 2)), float(g.GetCellValue(r, 3)), g.GetCellValue(r, 4) == "1")
             except ValueError:
                 settings[n] = nets[n]
-        classes = apply(board, settings, num("rise_c", 10), num("oz_outer", 1), num("oz_inner", 0.5))
+        classes = apply(board, settings, num("rise_c", 10), num("oz_outer", 1), num("oz_inner", 0.5),
+                        num("min_amps", MIN_AMPS))
         dlg.Destroy()
         pcbnew.Refresh()
         thin = too_thin(board, classes)
@@ -290,6 +313,8 @@ class NetSetup(pcbnew.ActionPlugin):
                          % (k, p["width"], p["clearance"], p["via_d"], p["via_drill"], p["vias"], ", ".join(n),
                             ("%d  (DRC will flag them - use Power Trace to widen)" % thin[k]) if thin[k] else
                             "none - your current traces already meet this"))
+        if apply.no_via:
+            lines.append("No vias allowed (DRC flags any via) on: " + ", ".join(apply.no_via))
         msg = "\n".join(lines) if lines else "Every net is at signal level (<= %.1f A, <= 30 V): all stay in Default." % SIGNAL_A
         wx.MessageBox(msg + "\n\nDone:\n - netclasses created and nets assigned (Board Setup > Net Classes)\n"
                       " - widths/vias added to the track & via dropdowns on the toolbar\n"
@@ -310,13 +335,16 @@ def _selfcheck():
     p = compute(24, 3, 10, 1, 0.5, mins)
     assert p["width"] == 1.4 and p["via_d"] == 1.2 and p["vias"] * via_amps(p["via_drill"]) >= 3, p
     assert compute(5, 0.5, 10, 1, 0.5, mins)["width"] == 0.2           # never below board minimum
+    assert unpack((3.3, 0.1), 0.5) == (3.3, 0.5, False)                 # min current lifts unspecified nets
+    assert unpack((24, 3)) == (24, 3, True) and unpack((24, 3, 0)) == (24, 3, False)  # >= 24 V: no vias by default
 
 
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("board", nargs="?")
-    ap.add_argument("--set", action="append", default=[], help='NET=VOLTS:AMPS, e.g. "+24V=24:3"')
+    ap.add_argument("--set", action="append", default=[], help='NET=VOLTS:AMPS[:NOVIAS], e.g. "+24V=24:3:1"')
+    ap.add_argument("--min-amps", type=float, default=MIN_AMPS, help="every net is sized for at least this")
     ap.add_argument("--rise", type=float, default=10)
     ap.add_argument("--oz", type=float, default=1.0)
     ap.add_argument("--oz-inner", type=float, default=0.5)
@@ -329,9 +357,10 @@ if __name__ == "__main__":
     _, nets = load_settings(b)
     for s in a.set:
         n, va = s.rsplit("=", 1)
-        nets[n] = tuple(float(x) for x in va.split(":"))
-    classes = apply(b, nets, a.rise, a.oz, a.oz_inner)
+        nets[n] = unpack([float(x) for x in va.split(":")])
+    classes = apply(b, nets, a.rise, a.oz, a.oz_inner, a.min_amps)
     pcbnew.SaveBoard(a.board, b)
     for k, (p, n) in sorted(classes.items()):
         print("%-14s width %.2f  clear %.2f  via %.1f/%.1f x%d  <- %s" % (k, p["width"], p["clearance"], p["via_d"],
               p["via_drill"], p["vias"], " ".join(n)))
+    print("no vias:", " ".join(apply.no_via) or "-")

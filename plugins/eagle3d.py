@@ -227,53 +227,259 @@ def box_model(fp, pads, outdir):
     return "${KIPRJMOD}/3d_generated/" + os.path.basename(path)
 
 
-def attach_models(board, out_dir, max_err=0.35):
-    """Attach a 3D model to every footprint that has none. Returns [(ref, package, match, cost)]."""
+CUSTOM_DIR = "3d_models"  # drop your own .step/.wrl files here, next to the board
+MODEL_EXT = (".step", ".stp", ".wrl", ".wrz")
+
+
+def custom_models(board_dir):
+    d = os.path.join(board_dir, CUSTOM_DIR)
+    return sorted(f for f in os.listdir(d) if f.lower().endswith(MODEL_EXT)) if os.path.isdir(d) else []
+
+
+def candidates(board, max_err=0.35, top=5, everything=False):
+    """Footprints without a model (everything=True: all of them), grouped by package: [{"package", "fps", "pads", "options"}].
+    options = up to `top` library matches, best first: (cost, theta, tx, ty, entry)."""
     idx = build_index()
     by_count = {}
     for e in idx:
         by_count.setdefault(len(e["pads"]), []).append(e)
-
-    cache, report = {}, []
+    groups = {}
     for fp in board.GetFootprints():
-        if len(fp.Models()) or ref_prefix(fp.GetReference()) in NO_MODEL:
+        if (len(fp.Models()) and not everything) or ref_prefix(fp.GetReference()) in NO_MODEL:
             continue
         pads = footprint_pads(fp)
         if not pads:
             continue
         key = (str(fp.GetFPID().GetLibItemName()), ref_prefix(fp.GetReference()), tuple(pads))
-        if key not in cache:
-            best = None
-            pkg = norm(key[0])
-            # same pad count, plus name-matched parts with any count (modules with extra GND/thermal pads)
-            cands = list(by_count.get(len(pads), []))
-            cands += [e for e in idx if len(e["pads"]) != len(pads)
-                      and any(k in pkg and v in norm(e["name"]) for k, v in PKG_ALIAS.items())]
-            ebody, rank = footprint_body(fp), None
-            for e in cands:
-                if len(e["pads"]) == len(pads) and sum(p[1] for p in e["pads"]) != sum(p[1] for p in pads):
-                    continue  # different SMD/THT mix
-                c, th, tx, ty = fit(pads, e["pads"])
-                c -= name_bonus(fp, e)
-                r = c + body_term(ebody, e, th, tx, ty)  # body shape ranks, pads decide acceptance
-                if c <= max_err and (rank is None or r < rank):
-                    best, rank = (c, th, tx, ty, e), r
-            cache[key] = best
-        best = cache[key]
+        if key in groups:
+            groups[key]["fps"].append(fp)
+            continue
+        pkg = norm(key[0])
+        # same pad count, plus name-matched parts with any count (modules with extra GND/thermal pads)
+        cands = list(by_count.get(len(pads), []))
+        cands += [e for e in idx if len(e["pads"]) != len(pads)
+                  and any(k in pkg and v in norm(e["name"]) for k, v in PKG_ALIAS.items())]
+        ebody, ranked = footprint_body(fp), []
+        for e in cands:
+            if len(e["pads"]) == len(pads) and sum(p[1] for p in e["pads"]) != sum(p[1] for p in pads):
+                continue  # different SMD/THT mix
+            c, th, tx, ty = fit(pads, e["pads"])
+            c -= name_bonus(fp, e)
+            if c <= max_err:  # pads decide acceptance, body shape ranks
+                ranked.append((c + body_term(ebody, e, th, tx, ty), (c, th, tx, ty, e)))
+        ranked.sort(key=lambda r: r[0])
+        groups[key] = {"package": key[0], "fps": [fp], "pads": pads, "options": [o for _, o in ranked[:top]]}
+    return list(groups.values())
 
+
+def model_from(option):
+    c, th, tx, ty, e = option
+    m = pcbnew.FP_3DMODEL()
+    ox, oy = rot(e["off"][0], e["off"][1], th)
+    m.m_Filename = e["model"]
+    m.m_Offset = pcbnew.VECTOR3D(ox + tx, oy + ty, e["off"][2])
+    # KiCad's model Z rotation is clockwise-positive, our fit angle is CCW
+    m.m_Rotation = pcbnew.VECTOR3D(e["rot"][0], e["rot"][1], e["rot"][2] - th)
+    return m
+
+
+def copy_model(m):
+    """FP_3DMODEL has no copy constructor in the SWIG API; each footprint needs its own instance."""
+    c = pcbnew.FP_3DMODEL()
+    c.m_Filename, c.m_Offset, c.m_Rotation, c.m_Scale = m.m_Filename, m.m_Offset, m.m_Rotation, m.m_Scale
+    return c
+
+
+def option_label(option):
+    return "%s:%s" % (option[4]["lib"], option[4]["name"])
+
+
+def apply(group, choice, out_dir):
+    """choice: index into group["options"], "box" for a generated box, None to skip. Returns report rows."""
+    if choice is None:
+        return []
+    if isinstance(choice, tuple):  # ("custom", file name in <board dir>/3d_models/)
         m = pcbnew.FP_3DMODEL()
-        if best:
-            c, th, tx, ty, e = best
-            ox, oy = rot(e["off"][0], e["off"][1], th)
-            m.m_Filename = e["model"]
-            m.m_Offset = pcbnew.VECTOR3D(ox + tx, oy + ty, e["off"][2])
-            # KiCad's model Z rotation is clockwise-positive, our fit angle is CCW
-            m.m_Rotation = pcbnew.VECTOR3D(e["rot"][0], e["rot"][1], e["rot"][2] - th)
-            report.append((fp.GetReference(), key[0], "%s:%s" % (e["lib"], e["name"]), round(c, 3)))
-        else:
-            m.m_Filename = box_model(fp, pads, os.path.join(out_dir, "3d_generated"))
-            report.append((fp.GetReference(), key[0], "BOX (no library match)", None))
-        fp.Models().push_back(m)
+        m.m_Filename = "${KIPRJMOD}/%s/%s" % (CUSTOM_DIR, choice[1])
+        label, cost = "custom: " + choice[1], None
+    elif choice == "box":
+        m = pcbnew.FP_3DMODEL()
+        m.m_Filename = box_model(group["fps"][0], group["pads"], os.path.join(out_dir, "3d_generated"))
+        label, cost = "BOX (no library match)", None
+    else:
+        opt = group["options"][choice]
+        m, label, cost = model_from(opt), option_label(opt), round(opt[0], 3)
+    for fp in group["fps"]:
+        fp.Models().clear()  # replace, never stack a second model on top
+        fp.Models().push_back(copy_model(m))
+    return [(fp.GetReference(), group["package"], label, cost) for fp in group["fps"]]
+
+
+def attach_models(board, out_dir, max_err=0.35):
+    """Attach the best 3D model (or a generated box) to every footprint that has none.
+    Returns [(ref, package, match, cost)]."""
+    report = []
+    for g in candidates(board, max_err, top=1):
+        report += apply(g, 0 if g["options"] else "box", out_dir)
+    return report
+
+
+def preview_png(fp, model, out_png, run=True):
+    """3D render of just this footprint with `model` (None = no model), isometric, via kicad-cli. ~1-3 s.
+    run=False: only write the one-part board and return its path (render() it later, e.g. in a thread)."""
+    b = pcbnew.BOARD()
+    f = pcbnew.FOOTPRINT(fp)
+    b.Add(f)
+    if f.IsFlipped():  # preview from the top, whichever side the part sits on
+        f.Flip(f.GetPosition(), getattr(pcbnew, "FLIP_DIRECTION_TOP_BOTTOM", False))
+    f.SetOrientationDegrees(0)
+    f.Models().clear()
+    if model is not None:
+        f.Models().push_back(model)
+    bb = f.GetBoundingBox(False, False)
+    m = pcbnew.FromMM(1.5)
+    r = pcbnew.PCB_SHAPE(b)
+    r.SetShape(pcbnew.SHAPE_T_RECT)
+    r.SetStart(pcbnew.VECTOR2I(bb.GetLeft() - m, bb.GetTop() - m))
+    r.SetEnd(pcbnew.VECTOR2I(bb.GetRight() + m, bb.GetBottom() + m))
+    r.SetLayer(pcbnew.Edge_Cuts)
+    b.Add(r)
+    pcb = os.path.splitext(out_png)[0] + ".kicad_pcb"
+    pcbnew.SaveBoard(pcb, b)
+    return render(pcb, out_png) if run else pcb
+
+
+def render(pcb, out_png):
+    """No pcbnew here, so it is safe to call from a worker thread."""
+    subprocess.run([kpaths.kicad_cli(), "pcb", "render", "--quality", "basic", "-w", "360", "--height", "280",
+                    "--rotate", "-45,0,30", "--zoom", "0.6", "-o", out_png, pcb],
+                   capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    return out_png if os.path.exists(out_png) else None
+
+
+def pick_and_apply(board, out_dir):
+    """3D Models dialog: every package without a model, its top library matches, a live 3D preview.
+    Returns the report of what was applied, or None if cancelled."""
+    import tempfile, threading
+    import wx
+    busy = wx.BusyInfo("Matching footprints to KiCad 3D models...\n(first run indexes the library, ~20 s)")
+    try:
+        groups = candidates(board)
+    finally:
+        del busy
+    if not groups:
+        if wx.MessageBox("Every footprint already has a 3D model.\nPick models for all parts anyway "
+                         "(Skip keeps a part's current model)?", "3D Models", wx.YES_NO) != wx.YES:
+            return None
+        groups = candidates(board, everything=True)
+        if not groups:
+            return []
+    tmp = tempfile.mkdtemp(prefix="myplugin_3d_")
+    BOX, SKIP, BROWSE = "Generated box (no library match)", "Skip - leave without a model", "Browse for a model file..."
+    dlg = wx.Dialog(None, title="3D Models - pick a model per package", style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
+    lst = wx.ListBox(dlg, choices=["%s  (%s)" % (g["package"], ", ".join(f.GetReference() for f in g["fps"]))
+                                   for g in groups], size=(380, 300))
+    pick = wx.Choice(dlg, size=(420, -1))
+    pic = wx.StaticBitmap(dlg, size=(360, 280))
+    note = wx.StaticText(dlg, label="")
+    # default: best match; when re-picking parts that already have a model, default to keeping it
+    choice = [None if len(g["fps"][0].Models()) else 0 if g["options"] else "box" for g in groups]  # per group: option index, "box" or None
+    shown = {}  # (group, choice) -> png path
+
+    def values(i):
+        """Dropdown entries for group i: [(label, value)]; value as apply() takes it, or "browse"."""
+        return ([(option_label(o), n) for n, o in enumerate(groups[i]["options"])]
+                + [("Custom: " + f, ("custom", f)) for f in custom_models(out_dir)]
+                + [(BROWSE, "browse"), (BOX, "box"), (SKIP, None)])
+
+    def preview_model(c, i):
+        if isinstance(c, int):
+            return model_from(groups[i]["options"][c])
+        if isinstance(c, tuple):  # absolute path: the preview board lives in a temp folder, not the project
+            m = pcbnew.FP_3DMODEL()
+            m.m_Filename = os.path.join(out_dir, CUSTOM_DIR, c[1]).replace("\\", "/")
+            return m
+        fp = groups[i]["fps"][0]
+        return copy_model(fp.Models()[0]) if c is None and len(fp.Models()) else None  # Skip: what it has now
+
+    def show(i):
+        c = choice[i]
+        key = (i, c)
+        if key in shown:
+            pic.SetBitmap(wx.Bitmap(shown[key]) if shown[key] else wx.Bitmap(360, 280))
+            note.SetLabel("" if shown[key] else "Preview failed (model file missing?)")
+            return
+        note.SetLabel("Rendering preview...")
+        png = os.path.join(tmp, "p%d_%d.png" % (i, len(shown)))
+        pcb = preview_png(groups[i]["fps"][0], preview_model(c, i), png, run=False)
+
+        def work():
+            png = render(pcb, os.path.splitext(pcb)[0] + ".png")
+            wx.CallAfter(done, key, png)
+        threading.Thread(target=work, daemon=True).start()
+
+    def done(key, png):
+        if not dlg:  # dialog already closed
+            return
+        shown[key] = png
+        if lst.GetSelection() == key[0] and choice[key[0]] == key[1]:
+            show(key[0])
+
+    def on_list(_=None):
+        i = lst.GetSelection()
+        vals = values(i)
+        pick.Set([label for label, _ in vals])
+        pick.SetSelection(next(n for n, (_, v) in enumerate(vals) if v == choice[i]))
+        show(i)
+
+    def on_pick(_):
+        i = lst.GetSelection()
+        v = values(i)[pick.GetSelection()][1]
+        if v == "browse":
+            fd = wx.FileDialog(dlg, "3D model (copied into %s/ next to the board)" % CUSTOM_DIR,
+                               wildcard="3D models (*.step;*.stp;*.wrl;*.wrz)|*.step;*.stp;*.wrl;*.wrz",
+                               style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST)
+            if fd.ShowModal() == wx.ID_OK:
+                import shutil
+                os.makedirs(os.path.join(out_dir, CUSTOM_DIR), exist_ok=True)
+                src = fd.GetPath()
+                dst = os.path.join(out_dir, CUSTOM_DIR, os.path.basename(src))
+                if os.path.abspath(src) != os.path.abspath(dst):
+                    shutil.copy2(src, dst)
+                choice[i] = ("custom", os.path.basename(src))
+            fd.Destroy()
+            on_list()  # refresh the list (new file shows up for every package)
+            return
+        choice[i] = v
+        show(i)
+
+    lst.Bind(wx.EVT_LISTBOX, on_list)
+    pick.Bind(wx.EVT_CHOICE, on_pick)
+    right = wx.BoxSizer(wx.VERTICAL)
+    right.Add(wx.StaticText(dlg, label="Model for this package (best match first):"))
+    right.Add(pick, 0, wx.EXPAND | wx.TOP, 4)
+    right.Add(pic, 0, wx.TOP, 8)
+    right.Add(note, 0, wx.TOP, 4)
+    row = wx.BoxSizer(wx.HORIZONTAL)
+    row.Add(lst, 1, wx.EXPAND | wx.ALL, 8)
+    row.Add(right, 0, wx.ALL, 8)
+    s = wx.BoxSizer(wx.VERTICAL)
+    s.Add(row, 1, wx.EXPAND)
+    s.Add(wx.StaticText(dlg, label="Copper is never changed. Ok applies the chosen model to every part of that package.\n"
+                                   "Your own models: put .step/.wrl files in %s/ next to the board (or use Browse). "
+                                   "Custom models go in at zero offset; nudge them in Footprint Properties > 3D Models."
+                                   % CUSTOM_DIR), 0, wx.LEFT, 8)
+    s.Add(dlg.CreateButtonSizer(wx.OK | wx.CANCEL), 0, wx.ALL | wx.ALIGN_RIGHT, 8)
+    dlg.SetSizerAndFit(s)
+    lst.SetSelection(0)
+    on_list()
+    ok = dlg.ShowModal() == wx.ID_OK
+    dlg.Destroy()
+    if not ok:
+        return None
+    report = []
+    for g, c in zip(groups, choice):
+        report += apply(g, c, out_dir)
     return report
 
 
