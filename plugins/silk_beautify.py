@@ -9,7 +9,7 @@
 Toolbar button in PCB editor (Tools > External Plugins > Silk Beautify), or CLI:
   <KiCad python> silk_beautify.py board.kicad_pcb [-o out.kicad_pcb]
 """
-import re
+import math, re
 import pcbnew
 
 REF_H = 0.8          # mm, reference text height (JLC/PCBWay min ~0.8)
@@ -21,6 +21,9 @@ CONN_LIB = re.compile(r"connector|terminal|header|socket|phoenix|mcv|molex|jst",
 AUTO_NET = re.compile(r"^(N\$\d+|Net-\(|unconnected-)", re.I)
 W_PAD, W_TEXT, W_BODY, W_SILK, W_VIA, W_EDGE = 10, 10, 4, 2, 1, 100
 CELL = 5.0           # mm, spatial hash cell
+LEADER_RINGS = 5     # how far (in text heights) to look for a free spot before giving up
+# ponytail: leader lines are recognised on rerun by this exact width (0.121 mm); a user line of that width would go too
+LEADER_W = 121000    # nm
 
 
 def mm(v):
@@ -129,25 +132,64 @@ def place_reference(fp, obs, edge):
     o = obs[fp.IsFlipped()]
     x0, y0, x1, y1 = body_box(fp)
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-    best = None
-    for ang, ang_pen in ((0, 0.0), (90, 0.05)):
-        t.SetTextAngleDegrees(ang)
-        b = place_at(t, cx, cy)
-        w, h = b[2] - b[0], b[3] - b[1]
-        for ring in (0, 1, 2):
-            g = GAP + ring * REF_H
-            spots = [(cx, y0 - g - h / 2), (cx, y1 + g + h / 2), (x0 - g - w / 2, cy), (x1 + g + w / 2, cy),
-                     (x0 - g - w / 2, y0 - g - h / 2), (x1 + g + w / 2, y0 - g - h / 2),
-                     (x0 - g - w / 2, y1 + g + h / 2), (x1 + g + w / 2, y1 + g + h / 2)]
-            for i, (sx, sy) in enumerate(spots):
-                r = (sx - w / 2, sy - h / 2, sx + w / 2, sy + h / 2)
-                c = o.cost(r, skip=fp) + edge_cost(r, edge) + ang_pen + 0.01 * i + 0.1 * ring
-                if best is None or c < best[0]:
-                    best = (c, ang, sx, sy)
+
+    def search(rings):
+        best = None
+        for ang, ang_pen in ((0, 0.0), (90, 0.05)):
+            t.SetTextAngleDegrees(ang)
+            b = place_at(t, cx, cy)
+            w, h = b[2] - b[0], b[3] - b[1]
+            for ring in rings:
+                g = GAP + ring * REF_H
+                spots = [(cx, y0 - g - h / 2), (cx, y1 + g + h / 2), (x0 - g - w / 2, cy), (x1 + g + w / 2, cy),
+                         (x0 - g - w / 2, y0 - g - h / 2), (x1 + g + w / 2, y0 - g - h / 2),
+                         (x0 - g - w / 2, y1 + g + h / 2), (x1 + g + w / 2, y1 + g + h / 2)]
+                for i, (sx, sy) in enumerate(spots):
+                    r = (sx - w / 2, sy - h / 2, sx + w / 2, sy + h / 2)
+                    c = o.cost(r, skip=fp) + edge_cost(r, edge) + ang_pen + 0.01 * i + 0.1 * min(ring, 2)
+                    if best is None or c < best[0]:
+                        best = (c, ang, sx, sy)
+        return best
+
+    best = search((0, 1, 2))
+    far = None
+    if best[0] > 0.5:  # crowded: look farther out; a clean far spot + leader line beats text on pads
+        far = search(range(3, 3 + LEADER_RINGS))
+        if far[0] < 0.5:
+            best = far
     c, ang, sx, sy = best
     t.SetTextAngleDegrees(ang)
-    o.add(place_at(t, sx, sy), W_TEXT)
+    r = place_at(t, sx, sy)
+    o.add(r, W_TEXT)
+    if best is far:
+        add_leader(fp, r, (x0, y0, x1, y1))
     return c
+
+
+def _closest(box_, p):
+    return min(max(p[0], box_[0]), box_[2]), min(max(p[1], box_[1]), box_[3])
+
+
+def add_leader(fp, text_box, body):
+    """Thin silk line from the moved reference to its part; belongs to the footprint, so it moves with it."""
+    body_c = ((body[0] + body[2]) / 2, (body[1] + body[3]) / 2)
+    a = _closest(text_box, body_c)
+    b = _closest(body, a)
+    if math.dist(a, b) < GAP * 2:
+        return
+    s = pcbnew.PCB_SHAPE(fp)
+    s.SetShape(pcbnew.SHAPE_T_SEGMENT)
+    s.SetStart(pcbnew.VECTOR2I(pcbnew.FromMM(a[0]), pcbnew.FromMM(a[1])))
+    s.SetEnd(pcbnew.VECTOR2I(pcbnew.FromMM(b[0]), pcbnew.FromMM(b[1])))
+    s.SetWidth(LEADER_W)
+    s.SetLayer(pcbnew.B_SilkS if fp.IsFlipped() else pcbnew.F_SilkS)
+    fp.Add(s)
+
+
+def remove_leaders(fp):
+    for g in list(fp.GraphicalItems()):
+        if g.GetClass() == "PCB_SHAPE" and g.GetShape() == pcbnew.SHAPE_T_SEGMENT and g.GetWidth() == LEADER_W:
+            fp.Delete(g)
 
 
 def label_connector(fp, obs, edge):
@@ -233,6 +275,8 @@ def run(board, labels=True, values_to_fab=True):
             v = fp.Value()
             if v.GetLayer() in (pcbnew.F_SilkS, pcbnew.B_SilkS):
                 v.SetLayer(pcbnew.B_Fab if fp.IsFlipped() else pcbnew.F_Fab)
+    for fp in fps:
+        remove_leaders(fp)  # from a previous run
     obs = build_obstacles(board)
     n_labels, bad = 0, []
     for fp in fps:

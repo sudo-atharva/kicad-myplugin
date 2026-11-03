@@ -1,8 +1,8 @@
 {
   "$schema": "https://go.kicad.org/pcm/schemas/v1",
   "name": "MyPlugin",
-  "description": "Fab-aware DRC (Lion Circuits), V/A net sizing, datasheet-style Copper Paths, pours + ViaStitcher, H/V autoroute, PcbDraw docs, live FreeCAD link.",
-  "description_full": "One toolbar button opens a hub with twelve tools: Fab Rules (Lion Circuits DRC), Net Setup (IPC-2221 widths, netclasses, DRC rules), Power Trace, Copper Path (wide copper that follows a net's traces, keeps clearance, refresh after dragging), Power Pours, Via Stitching (bundled ViaStitcher by weirdgyn, MIT), Autoroute H/V (Freerouting, never shrinks traces), Silk Beautify, Docs (PcbDraw drawings + renders), FreeCAD (StepUp) live link both ways without restarting either app, 3D Models for Eagle imports, and Eagle -> KiCad symbol swap with netlist check.\n\nAll output is written next to the board. Optional: Java 21 + freerouting.jar (autoroute), PcbDraw (installed on first use), FreeCAD + KiCad StepUp (installed on first use).",
+  "description": "Project + git, fab-aware DRC, V/A net sizing, array placement, Copper Paths, pours, H/V autoroute, docs, BOM/CPL, FreeCAD link.",
+  "description_full": "One toolbar button opens a hub with fifteen tools: Project & Versions (standard folders + git), Array Place (repeated channels, live spacing), BOM + CPL Export, Fab Rules (Lion Circuits DRC), Net Setup (IPC-2221 widths, netclasses, DRC rules), Power Trace, Copper Path (wide copper that follows a net's traces, keeps clearance, refresh after dragging), Power Pours, Via Stitching (bundled ViaStitcher by weirdgyn, MIT), Autoroute H/V (Freerouting, never shrinks traces), Silk Beautify, Docs (PcbDraw drawings + renders), FreeCAD (StepUp) live link both ways without restarting either app, 3D Models for Eagle imports, and Eagle -> KiCad symbol swap with netlist check.\n\nAll output is written next to the board. Optional: Java 21 + freerouting.jar (autoroute), PcbDraw (installed on first use), FreeCAD + KiCad StepUp (installed on first use).",
   "identifier": "com.github.sudo-atharva.myplugin",
   "type": "plugin",
   "author": {
@@ -17,7 +17,7 @@
   },
   "versions": [
     {
-      "version": "1.2.0",
+      "version": "1.3.0",
       "status": "testing",
       "kicad_version": "10.0",
       "runtime": "swig"

@@ -1,6 +1,6 @@
 # MyPlugin for KiCad 10
 
-One toolbar button opens a hub with twelve tools that take care of the tedious parts of PCB design: fab-correct DRC, trace widths from real current, datasheet-style wide copper, power pours and via stitching, a horizontal/vertical autorouter, clean silkscreen, documentation drawings, a live KiCad ⇄ FreeCAD link, and Eagle-import cleanup.
+One toolbar button opens a hub with fifteen tools that take care of the tedious parts of PCB design: project folders + git versions, fab-correct DRC, array placement of repeated channels, trace widths from real current, datasheet-style wide copper, power pours and via stitching, a horizontal/vertical autorouter, clean silkscreen, documentation drawings, BOM + pick-and-place, a live KiCad ⇄ FreeCAD link, and Eagle-import cleanup.
 
 ![MyPlugin hub](docs/hub.png)
 
@@ -8,17 +8,20 @@ One toolbar button opens a hub with twelve tools that take care of the tedious p
 
 | Tool | What it does |
 |---|---|
+| **Project & Versions** | New project with the standard layout (`01_Source` … `07_FreeCAD`, blank KiCad project, README, `.gitignore`) and a git repo. For an open board: *Save version* commits the project with your note, *History* lists past versions. Only the project's own folder is committed, even inside a bigger repo. Needs [git](https://git-scm.com). |
 | **Fab Rules** | Sets Board Setup constraints, the Default netclass and DRC rules to Lion Circuits' published capabilities (MII / Custom / Rush, 1–3 oz). Optionally makes them the default for every new project. |
-| **Net Setup** | Enter voltage and current per net → IPC-2221 trace width, clearance, via size and via count. Creates netclasses, adds the sizes to the toolbar dropdowns, and writes `.kicad_dru` rules so DRC flags power traces that are too thin. |
+| **Net Setup** | Enter voltage and current per net → IPC-2221 trace width, clearance, via size and via count. Creates netclasses, adds the sizes to the toolbar dropdowns, and writes `.kicad_dru` rules so DRC flags power traces that are too thin. **Min current** (default 0.5 A) sizes every net for at least that, so unlisted nets never fall back to the thinnest trace. **No vias** (ticked by default from 24 V) makes any via on that net a DRC error. |
+| **Array Place** | Place one channel by hand (e.g. an LED and its resistor), select it, run: every other channel wired the same way is found by connectivity (reference numbers don't matter) and laid out like yours. Spacing X/Y and channels per row update the board live; order by reference or by connector pin. Cancel puts everything back. |
 | **Power Trace** | Select a pad or trace, enter V/A: the net gets its netclass, existing traces are widened, and the router switches to netclass width. |
 | **Copper Path** | Wide copper that behaves like a trace. Route the net normally (click the points it must touch), pick a width (3 mm, 5 mm…) and 45° or round corners: the net's traces on that layer get wrapped in a zone of that width. It keeps clearance to every other net by itself and narrows into pin rows instead of spreading over neighbouring pins. Drag the traces, press **Refresh Copper Paths** (own toolbar button), and the copper re-forms. Good for copying datasheet layouts. |
 | **Power Pours** | Copper around regulator pad groups, GND pours, and plane vias for pads a pour would cut off. Skips pours that would create islands and says why. |
-| **Via Stitching** | [ViaStitcher](https://github.com/weirdgyn/viastitcher) by Michele Santucci (bundled, MIT): select a zone, fill it with a configurable stitching-via grid. |
+| **Via Stitching** | [ViaStitcher](https://github.com/weirdgyn/viastitcher) by Michele Santucci (bundled, MIT): select a zone, fill it with a configurable stitching-via grid. **Preview** places the vias right away; change values and press again, Ok keeps, Cancel removes. |
 | **Autoroute H/V** | Freerouting with horizontal-on-top / vertical-on-bottom preference. Uses your netclasses; fanout and neck-down are off, so it never shrinks a trace to make it fit. |
-| **Silk Beautify** | Places references cleanly, prints net names next to connector pins, moves values to Fab, lists anything it couldn't place. |
-| **Docs (PcbDraw)** | [PcbDraw](https://github.com/yaqwsx/PcbDraw) by Jan Mrázek: front/back drawings (SVG) and 3D renders (PNG) into the project's `04_Docs/` (or `docs/` next to the board). Offers to install PcbDraw if missing. |
+| **Silk Beautify** | Places references cleanly, prints net names next to connector pins, moves values to Fab. When there is no room next to a part, the reference goes to the nearest free spot a little farther out with a thin leader line to its part. Lists anything it still couldn't place. Rerunning replaces its own leaders. |
+| **Docs** | Front/back drawings (SVG) and 3D renders (PNG) into the project's `04_Docs/` (or `docs/` next to the board). **Quick** (default): KiCad's own exporter, a few seconds, nothing to install. **Pretty**: [PcbDraw](https://github.com/yaqwsx/PcbDraw) by Jan Mrázek stylized drawings, slow; offers to install PcbDraw if missing. |
+| **BOM + CPL Export** | From the board, no schematic step: grouped BOM CSV (JLCPCB columns: Comment, Designator, Footprint, LCSC Part #, + Qty, Manufacturer, MPN), pick-and-place CSV, and a JSON with everything for scripts, into `03_Manufacturing/`. Skips DNP / excluded parts; lists lines without an LCSC/MPN field. |
 | **FreeCAD (StepUp)** | Opens the board in FreeCAD with [KiCad StepUp](https://github.com/easyw/kicadStepUpMod) already loaded: no workbench clicking, no file picking. FreeCAD reloads by itself whenever you save in KiCad; its **KiCad Bridge** panel pushes part moves / outline back and makes KiCad reload. Neither app has to be closed. |
-| **3D Models** | For footprints without a 3D model (typical after an Eagle import), finds the matching KiCad library footprint by pad geometry and attaches its model, aligned. |
+| **3D Models** | For footprints without a 3D model (typical after an Eagle import), finds the matching KiCad library footprints by pad geometry. A picker shows each package with its top 5 matches and a live 3D preview; choose one, a generated box, skip, or **your own model**: put `.step`/`.wrl` files in `3d_models/` next to the board (or *Browse…*, which copies them there). Stored as `${KIPRJMOD}/3d_models/…`, so the project stays portable. |
 | **Eagle → KiCad Symbols** | Replaces imported Eagle schematic symbols with KiCad library symbols, keeping the Eagle pin numbers so the PCB still matches. Nothing is saved unless the netlist is identical. |
 
 Example: LM2596 buck converter placed with Fab Rules + Net Setup applied:
@@ -36,21 +39,21 @@ Requirements: **KiCad 10.0** with its libraries. Nothing is hard-coded to one PC
 | Tool | Needs | If missing |
 |---|---|---|
 | Autoroute H/V | Java (current, e.g. Temurin 25) + Freerouting | Freerouting: downloaded from its official releases. Java: link to install it. |
-| Docs (PcbDraw) | PcbDraw | `pip install --user pcbdraw` into KiCad's Python |
+| Docs, Pretty mode | PcbDraw | `pip install --user pcbdraw` into KiCad's Python |
 | FreeCAD (StepUp) | FreeCAD 0.21+ (tested 1.1), KiCad StepUp, kicad-python | StepUp downloaded into the FreeCAD user `Mod` folder FreeCAD reads; kicad-python pip-installed. Push/pull also needs *Preferences › Plugins › Enable KiCad API* (off by default). |
 
 Overrides if you keep tools elsewhere: `KICAD_CLI`, `FREEROUTING_JAR`, `FREECAD_EXE`, `JAVA_HOME`.
 
 ## Where files go
 
-Nothing is written into the plugin folder. Everything a tool produces goes **next to your board**: `.kicad_dru` rules, Net Setup data, generated 3D boxes, the mapped symbol library. If the board sits in a project laid out like below, docs go to `04_Docs/` and FreeCAD files to `07_FreeCAD/`. The shared 3D-model library index is cached in `%LOCALAPPDATA%\MyPlugin\`.
+Nothing is written into the plugin folder. Everything a tool produces goes **next to your board**: `.kicad_dru` rules, Net Setup data, generated 3D boxes, the mapped symbol library. Your own 3D models go in `3d_models/` next to the board. If the board sits in a project laid out like below (*Project & Versions* creates it), docs go to `04_Docs/`, BOM/CPL to `03_Manufacturing/` and FreeCAD files to `07_FreeCAD/`. The shared 3D-model library index is cached in `%LOCALAPPDATA%\MyPlugin\`.
 
 ```
 Project-Name/
-├── 01_PCB/            ← KiCad project
+├── 01_Source/         ← KiCad project
 ├── 02_Datasheets/
-├── 03_Manufacturing/
-├── 04_Docs/           ← Docs (PcbDraw) output
+├── 03_Manufacturing/  ← BOM + CPL export
+├── 04_Docs/           ← Docs output
 ├── 05_Testing/
 ├── 06_Code/
 └── 07_FreeCAD/        ← FreeCAD (StepUp) files
@@ -58,7 +61,7 @@ Project-Name/
 
 ## Suggested workflow
 
-Fab Rules → Net Setup → place parts → Power Pours / Copper Path → Via Stitching → Autoroute H/V / Power Trace → Silk Beautify → DRC → Docs.
+Project & Versions → Fab Rules → Net Setup → place parts / Array Place → Power Pours / Copper Path → Via Stitching → Autoroute H/V / Power Trace → Silk Beautify → DRC → Docs → BOM + CPL → Save version.
 
 ## Extras in `docs/`
 
@@ -71,10 +74,14 @@ Every tool also runs headless with KiCad's Python, e.g.
 
 ```
 "C:\Program Files\KiCad\10.0\bin\python.exe" plugins\fab_rules.py board.kicad_pcb --service MII --oz 1
-"C:\Program Files\KiCad\10.0\bin\python.exe" plugins\net_setup.py board.kicad_pcb --set "+12V=12:3" --set "GND=0:3"
+"C:\Program Files\KiCad\10.0\bin\python.exe" plugins\net_setup.py board.kicad_pcb --set "+24V=24:3:1" --set "GND=0:3" --min-amps 0.5
 "C:\Program Files\KiCad\10.0\bin\python.exe" plugins\copper_path.py board.kicad_pcb --net VIN --layer F.Cu --width 5 --style 45
 "C:\Program Files\KiCad\10.0\bin\python.exe" plugins\copper_path.py board.kicad_pcb --refresh
-"C:\Program Files\KiCad\10.0\bin\python.exe" plugins\docs_pcbdraw.py board.kicad_pcb
+"C:\Program Files\KiCad\10.0\bin\python.exe" plugins\docs_pcbdraw.py board.kicad_pcb [--pretty]
+"C:\Program Files\KiCad\10.0\bin\python.exe" plugins\bom_export.py board.kicad_pcb
+"C:\Program Files\KiCad\10.0\bin\python.exe" plugins\array_place.py board.kicad_pcb D1,R1 --pitch 4 --order connector
+"C:\Program Files\KiCad\10.0\bin\python.exe" plugins\project_git.py new D:\PCBs MyBoard
+"C:\Program Files\KiCad\10.0\bin\python.exe" plugins\project_git.py commit board.kicad_pcb "routed power"
 "C:\Program Files\KiCad\10.0\bin\python.exe" plugins\eagle3d.py board.brd
 ```
 

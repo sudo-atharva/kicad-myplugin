@@ -118,6 +118,19 @@ def user_data_dir():
     return d
 
 
+PROJECT_FOLDERS = ["01_Source", "02_Datasheets", "03_Manufacturing", "04_Docs", "05_Testing", "06_Code", "07_FreeCAD"]
+
+
+def project_folder(board_file, name, fallback):
+    """<project>/<name> (e.g. 04_Docs) when the board sits in the project layout - in 01_Source/ (or 01_PCB/)
+    or at the project root - else <board dir>/<fallback>."""
+    board_dir = os.path.dirname(os.path.abspath(board_file))
+    for root in (os.path.dirname(board_dir), board_dir):
+        if os.path.isdir(os.path.join(root, name)):
+            return os.path.join(root, name)
+    return os.path.join(board_dir, fallback)
+
+
 def java():
     jh = os.environ.get("JAVA_HOME")
     return _first([shutil.which("java"), jh and os.path.join(jh, "bin", "java.exe" if WIN else "java")]

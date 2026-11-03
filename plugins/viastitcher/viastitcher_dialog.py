@@ -67,6 +67,8 @@ class ViaStitcherDialog(viastitcher_gui):
         self.Bind(wx.EVT_CLOSE, self.onCloseWindow)
         self.m_btnCancel.Bind(wx.EVT_BUTTON, self.onCloseWindow)
         self.m_btnOk.Bind(wx.EVT_BUTTON, self.onProcessAction)
+        self.m_btnPreview.Bind(wx.EVT_BUTTON, lambda e: self.onProcessAction(e, preview=True))
+        self.preview = []  # vias placed by the last Preview; removed on Cancel or before the next run
         self.m_btnClear.Bind(wx.EVT_BUTTON, self.onClearAction)
         self.board = board
         self.randomize = False
@@ -651,6 +653,7 @@ class ViaStitcherDialog(viastitcher_gui):
         via.SetDrill(settings["drill"])
         self.board.Add(via)
         self.pcb_group.AddItem(via)
+        self.preview.append(via)
         # The original snapshot omitted vias added during this run.
         self.overlappings.append(via)
         return True
@@ -718,8 +721,16 @@ class ViaStitcherDialog(viastitcher_gui):
         finally:
             dialog.Destroy()
 
-    def FillupArea(self):
-        """Fills selected area with vias."""
+    def _drop_preview(self):
+        for via in self.preview:
+            if self.pcb_group is not None:
+                self.pcb_group.RemoveItem(via)
+            self.board.Delete(via)
+        self.preview = []
+        pcbnew.Refresh()
+
+    def FillupArea(self, quiet=False):
+        """Fills selected area with vias. quiet: report in the title bar instead of message boxes (Preview)."""
 
         settings = self.fill_settings
         viasize = settings["diameter"]
@@ -780,7 +791,11 @@ class ViaStitcherDialog(viastitcher_gui):
             y += step_y
             row_index += 1
 
-        if settings["adaptive"]:
+        if quiet:
+            if settings["adaptive"]:
+                viacount += self._refill((x_start, y_start), stagger).added
+            self.SetTitle(_("{0} - preview: {1} vias (Ok keeps, Cancel removes)").format(__plugin_name__, viacount))
+        elif settings["adaptive"]:
             result = self._refill((x_start, y_start), stagger)
             message = _("Grid vias: {grid}\nAdditional vias: {extra}\nUnserved copper islands (per layer): {unserved}").format(
                 grid=viacount, extra=result.added, unserved=result.unserved)
@@ -795,8 +810,13 @@ class ViaStitcherDialog(viastitcher_gui):
             wx.MessageBox(_("No vias implanted!"))
         pcbnew.Refresh()
 
-    def onProcessAction(self, event):
-        """Manage main button (Ok) click event."""
+    def onProcessAction(self, event, preview=False):
+        """Ok (or Preview) click: (re)place the vias with the current settings."""
+        if preview or not self.preview:
+            self._drop_preview()  # Preview always redoes; Ok after a Preview keeps what is shown
+        else:
+            self.Destroy()
+            return
         try:
             self._read_fill_settings()
         except (ValueError, OverflowError):
@@ -879,8 +899,9 @@ class ViaStitcherDialog(viastitcher_gui):
             self.pcb_group.SetName(self.viagroupname)
             self.board.Add(self.pcb_group)
 
-        self.FillupArea()
-        self.Destroy()
+        self.FillupArea(quiet=preview)
+        if not preview:
+            self.Destroy()
 
     def onClearAction(self, event):
         """Manage clear vias button (Clear) click event."""
@@ -889,8 +910,9 @@ class ViaStitcherDialog(viastitcher_gui):
         self.Destroy()
 
     def onCloseWindow(self, event):
-        """Manage Close button click event."""
+        """Cancel / close: also removes vias placed by Preview."""
 
+        self._drop_preview()
         self.Destroy()
 
     def GetStandardLayerName(self, layerid):

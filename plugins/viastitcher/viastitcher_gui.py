@@ -195,6 +195,10 @@ class viastitcher_gui ( wx.Dialog ):
 
 		bSizer2 = wx.BoxSizer( wx.HORIZONTAL )
 
+		self.m_btnPreview = wx.Button( self, wx.ID_ANY, _(u"&Preview"), wx.DefaultPosition, wx.DefaultSize, 0 )
+		self.m_btnPreview.SetToolTip( _(u"Place the vias on the board now; change settings and press again to redo. Cancel removes them, Ok keeps them.") )
+		bSizer2.Add( self.m_btnPreview, 0, wx.ALIGN_CENTER|wx.ALIGN_CENTER_VERTICAL|wx.ALL, 5 )
+
 		self.m_btnOk = wx.Button( self, wx.ID_ANY, _(u"&Ok"), wx.DefaultPosition, wx.DefaultSize, 0 )
 
 		self.m_btnOk.SetDefault()
