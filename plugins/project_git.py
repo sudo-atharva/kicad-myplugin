@@ -10,7 +10,7 @@ CLI:
   <KiCad python> project_git.py commit board.kicad_pcb "message"
   <KiCad python> project_git.py log board.kicad_pcb
 """
-import json, os, shutil, subprocess, sys, uuid
+import json, os, re, shutil, subprocess, sys, uuid
 
 try:
     from . import kpaths  # inside the MyPlugin package
@@ -135,6 +135,89 @@ def changes(root):
 
 def history(root, n=15):
     return git(root, "log", "-%d" % n, "--date=format:%Y-%m-%d %H:%M", "--pretty=%h  %ad  %s", "--", ".").strip()
+
+
+def remote(root, name="origin"):
+    """URL of the remote, or '' if none."""
+    try:
+        return git(root, "remote", "get-url", name).strip()
+    except RuntimeError:
+        return ""
+
+
+def branch(root):
+    return git(root, "rev-parse", "--abbrev-ref", "HEAD").strip()
+
+
+def set_remote(root, url):
+    """Point origin at a GitHub (or any git) repo URL."""
+    url = url.strip()
+    if not re.match(r"^(https://|git@|ssh://|file://|[A-Za-z]:[\\/]|/)", url):
+        raise RuntimeError("That doesn't look like a repo address. Use the HTTPS one from GitHub, e.g.\n"
+                           "https://github.com/you/MyBoard.git")
+    git(root, "remote", "set-url" if remote(root) else "add", "origin", url)
+
+
+def gh_cli():
+    """GitHub CLI if installed and logged in, else None."""
+    exe = shutil.which("gh")
+    if not exe:
+        return None
+    r = subprocess.run([exe, "auth", "status"], capture_output=True, text=True, creationflags=NOWIN)
+    return exe if r.returncode == 0 else None
+
+
+def create_github_repo(root, name, private=True):
+    """New GitHub repo named `name` via the GitHub CLI, set as origin and pushed. Returns its URL."""
+    exe = gh_cli()
+    if not exe:
+        raise RuntimeError("The GitHub CLI (gh) is not installed or not logged in. Create the repo on github.com "
+                           "and paste its address instead, or install gh (https://cli.github.com) and run "
+                           "'gh auth login' once.")
+    top = git(root, "rev-parse", "--show-toplevel").strip()
+    r = subprocess.run([exe, "repo", "create", name, "--private" if private else "--public", "--source", top,
+                        "--remote", "origin", "--push"], capture_output=True, text=True, creationflags=NOWIN, cwd=top)
+    if r.returncode:
+        raise RuntimeError("gh repo create failed:\n%s" % (r.stderr or r.stdout).strip())
+    push(root)  # the version tags too
+    return remote(root)
+
+
+def push(root):
+    """Push the current branch and the version tags (Main-v1 ...). Returns git's message."""
+    if not remote(root):
+        raise RuntimeError("No GitHub repo connected yet: use 'Connect to GitHub' first.")
+    b = branch(root)
+    r = subprocess.run([shutil.which("git"), "push", "--follow-tags", "-u", "origin", b], cwd=root,
+                       capture_output=True, text=True, creationflags=NOWIN)
+    if r.returncode:
+        raise RuntimeError("Push failed:\n%s" % (r.stderr or r.stdout).strip())
+    git(root, "push", "origin", "--tags")
+    return (r.stderr or r.stdout).strip() or "Up to date."
+
+
+def pull(root):
+    """Get what was pushed from another PC (fast-forward only: never makes a merge on its own)."""
+    if not remote(root):
+        raise RuntimeError("No GitHub repo connected yet.")
+    r = subprocess.run([shutil.which("git"), "pull", "--ff-only", "--tags", "origin", branch(root)], cwd=root,
+                       capture_output=True, text=True, creationflags=NOWIN)
+    if r.returncode:
+        raise RuntimeError("Pull failed (did both PCs change the project? then commit here, and ask for help "
+                           "merging):\n%s" % (r.stderr or r.stdout).strip())
+    return (r.stdout or r.stderr).strip()
+
+
+def ahead_behind(root):
+    """(commits not pushed yet, commits on GitHub not here) after a fetch; (None, None) without a remote."""
+    if not remote(root):
+        return None, None
+    try:
+        git(root, "fetch", "--quiet", "origin")
+        out = git(root, "rev-list", "--left-right", "--count", "HEAD...origin/%s" % branch(root)).split()
+        return int(out[0]), int(out[1])
+    except RuntimeError:
+        return None, None  # nothing pushed yet, or offline
 
 
 def new_project(parent, name):

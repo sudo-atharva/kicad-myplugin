@@ -42,6 +42,37 @@ def _run_symbols():
     _show_text("Eagle -> KiCad Symbols", text + ("\n\nReopen the schematic to see it." if ok else ""))
 
 
+def _run_manager():
+    """Open the Project Manager window (its own program); the first time, offer desktop + Start menu shortcuts."""
+    import subprocess, wx
+    exe = os.path.join(HERE, "Project Manager.exe")
+    board = pcbnew.GetBoard().GetFileName()
+    args = []
+    if board:
+        from . import boards
+        args = [boards.project_root(board)]
+    if not os.path.isfile(exe):  # not Windows, or exe missing: run the script with KiCad's Python
+        from . import kpaths
+        subprocess.Popen([kpaths.kicad_python(), os.path.join(HERE, "project_manager.py")] + args)
+        return
+    subprocess.Popen([exe] + args)
+    flag = os.path.join(os.environ.get("APPDATA", ""), "MyPlugin", "shortcuts_offered")
+    if os.path.exists(flag) or not os.environ.get("APPDATA"):
+        return
+    os.makedirs(os.path.dirname(flag), exist_ok=True)
+    open(flag, "w").close()
+    if wx.MessageBox("Put a 'Project Manager' shortcut on the desktop and in the Start menu, so you can open it "
+                     "without KiCad?", "Project Manager", wx.YES_NO) != wx.YES:
+        return
+    ps = ("$sh = New-Object -ComObject WScript.Shell; "
+          "foreach ($d in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) { "
+          "$l = $sh.CreateShortcut((Join-Path $d 'Project Manager (KiCad).lnk')); $l.TargetPath = '%s'; "
+          "$l.WorkingDirectory = '%s'; $l.Description = 'MyPlugin Project Manager: boards, versions, git'; $l.Save() }"
+          % (exe.replace("'", "''"), HERE.replace("'", "''")))
+    subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
 def _tool(module, cls):
     def run():
         from importlib import import_module
@@ -50,6 +81,8 @@ def _tool(module, cls):
 
 
 TOOLS = [
+    ("project", "Project Manager", "Its own window (also from the desktop): projects, boards, versions, commit + push to GitHub.",
+     _run_manager),
     ("project", "Project & Versions", "Project layout + git: versions (v1, v2...), daughter boards with the main outline, history.",
      _tool("project_git", "ProjectGit")),
     ("fab", "Fab Rules", "Set DRC to Lion Circuits capabilities (MII / Custom / Rush). Do this first.",
