@@ -29,13 +29,13 @@ def have_converter():
     return r.returncode == 0
 
 
-def add_lib(table_file, kind, uri):
-    """Add LIB to a project fp-lib-table / sym-lib-table (created if missing). Returns True if added."""
+def add_lib(table_file, kind, uri, name=LIB, descr="LCSC / EasyEDA parts (easyeda2kicad)"):
+    """Add a library to a project fp-lib-table / sym-lib-table (created if missing). Returns True if added."""
     head = "fp_lib_table" if kind == "fp" else "sym_lib_table"
-    entry = '  (lib (name "%s")(type "KiCad")(uri "%s")(options "")(descr "LCSC / EasyEDA parts (easyeda2kicad)"))\n' % (LIB, uri)
+    entry = '  (lib (name "%s")(type "KiCad")(uri "%s")(options "")(descr "%s"))\n' % (name, uri, descr)
     if os.path.isfile(table_file):
         text = open(table_file, encoding="utf-8").read()
-        if re.search(r'\(name\s+"?%s"?\)' % LIB, text):
+        if re.search(r'\(name\s+"?%s"?\)' % re.escape(name), text):
             return False
         i = text.rstrip().rfind(")")
         text = text[:i].rstrip() + "\n" + entry + ")\n"

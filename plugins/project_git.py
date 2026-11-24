@@ -167,6 +167,7 @@ class ProjectGit(object):
                 "Start the next version of this board (v1 -> v2, old one kept and tagged)",
                 "New daughter board of this board (main outline on a 'Main board' layer)",
                 "Refresh the main board outline (on a daughter board)",
+                "Show this daughter board on its main board in 3D (stack height)",
                 "New project with the standard layout..."]
         if not board_file:
             opts = opts[-1:]
@@ -179,7 +180,7 @@ class ProjectGit(object):
         try:
             if pick.startswith("New project"):
                 self.new(wx)
-            elif pick.startswith(("Start", "New daughter", "Refresh")):
+            elif pick.startswith(("Start", "New daughter", "Refresh", "Show this")):
                 self.boards(wx, pcbnew, board_file, pick)
             else:
                 self.current(wx, pcbnew, board_file, pick.startswith("Show"))
@@ -192,6 +193,21 @@ class ProjectGit(object):
         except ImportError:
             import boards
         board = pcbnew.GetBoard()
+        if pick.startswith("Show this"):
+            h = wx.GetTextFromUser("Gap between the main board's top and this board's bottom (standoff height, mm):",
+                                   "3D stack", "10")
+            if not h.strip():
+                return
+            pcbnew.SaveBoard(board_file, board)
+            busy = wx.BusyInfo("Exporting this board as STEP...")
+            try:
+                main_file, step = boards.stack_preview(board_file, float(h))
+            finally:
+                del busy
+            wx.MessageBox("Open %s: its 3D viewer (and FreeCAD StepUp) now shows this board %s mm above it, as the 3D "
+                          "model of footprint DB_... (board only, not in BOM or placement files).\nRun this again after "
+                          "changing this board." % (os.path.basename(main_file), h.strip()), "Project & Versions")
+            return
         if pick.startswith("Refresh"):
             main, n = boards.refresh_outline(board_file, board)
             pcbnew.Refresh()

@@ -16,6 +16,7 @@ CLI (KiCad's python):
   boards.py daughter <main.kicad_pcb> <Name>           new daughter board of that board
   boards.py refresh  <daughter.kicad_pcb>              redraw the main board's outline from its file
   boards.py tree     <board.kicad_pcb>                 boards and versions of the project
+  boards.py stack    <daughter.kicad_pcb> [mm]         show it on its main board in 3D, mm above the main board
 """
 import json, os, re, shutil, sys, uuid
 
@@ -256,11 +257,7 @@ def draw_outline(board, main):
 def refresh_outline(board_file, board=None):
     """Redraw the main board's outline on a daughter board from the main board file recorded in project.json."""
     import pcbnew
-    root = project_root(board_file)
-    name, ver = split_name(os.path.dirname(board_file))
-    v = load(root)["boards"].get(name, {}).get("versions", {}).get(str(ver), {})
-    if not v.get("main_file"):
-        raise RuntimeError("%s v%d is not a daughter board (no main board in project.json)." % (name, ver))
+    root, name, ver, v = daughter_entry(board_file)
     main_file = os.path.join(root, v["main_file"])
     if not os.path.isfile(main_file):
         raise RuntimeError("Main board file is gone: %s" % main_file)
@@ -270,6 +267,55 @@ def refresh_outline(board_file, board=None):
     if own:
         pcbnew.SaveBoard(board_file, board)
     return v["main_board"], n
+
+
+def daughter_entry(board_file):
+    """(root, name, version, project.json entry) of a daughter board; error if it isn't one."""
+    root = project_root(board_file)
+    name, ver = split_name(os.path.dirname(board_file))
+    v = load(root)["boards"].get(name, {}).get("versions", {}).get(str(ver), {})
+    if not v.get("main_file"):
+        raise RuntimeError("%s v%d is not a daughter board (no main board in project.json)." % (name, ver))
+    return root, name, ver, v
+
+
+def stack_preview(board_file, height_mm):
+    """Show this daughter board on its main board in 3D: export it as STEP (KiCad's exporter, board origin) and put
+    it on the main board as a 3D model, `height_mm` above the main board's top (standoff height). The model hangs on
+    a board-only footprint DB_<name> (no pads, not in BOM / placement files), replaced on each run. FreeCAD StepUp
+    loads the main board's 3D models, so the stack shows up there too. Returns (main board file, step file)."""
+    import subprocess, pcbnew
+    root, name, ver, v = daughter_entry(board_file)
+    main_file = os.path.join(root, v["main_file"])
+    lock = os.path.join(os.path.dirname(main_file), "~%s.lck" % os.path.basename(main_file))
+    if os.path.exists(lock):
+        raise RuntimeError("%s is open in KiCad. Close it (save first), then run this again: the 3D model is "
+                           "added to its file." % os.path.basename(main_file))
+    step = os.path.join(os.path.dirname(os.path.abspath(board_file)), "%s_v%d-stack.step" % (name, ver))
+    r = subprocess.run([kpaths.kicad_cli(), "pcb", "export", "step", "--force", "--subst-models", "--no-dnp",
+                        "--user-origin", "0x0mm", "-o", step, board_file],
+                       capture_output=True, text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    if not os.path.isfile(step):
+        raise RuntimeError("STEP export failed:\n%s" % (r.stderr or r.stdout).strip()[-1500:])
+    main = pcbnew.LoadBoard(main_file)
+    ref = "DB_%s" % name
+    for fp in list(main.GetFootprints()):
+        if fp.GetReference() == ref:
+            main.Remove(fp)
+    fp = pcbnew.FOOTPRINT(main)
+    fp.SetReference(ref)
+    fp.SetValue("%s v%d (3D stack preview)" % (name, ver))
+    fp.Reference().SetVisible(False)
+    fp.Value().SetVisible(False)
+    fp.SetAttributes(pcbnew.FP_BOARD_ONLY | pcbnew.FP_EXCLUDE_FROM_BOM | pcbnew.FP_EXCLUDE_FROM_POS_FILES)
+    m = pcbnew.FP_3DMODEL()
+    m.m_Filename = "${KIPRJMOD}/" + os.path.relpath(step, os.path.dirname(main_file)).replace("\\", "/")
+    m.m_Offset = pcbnew.VECTOR3D(0, 0, float(height_mm))
+    fp.Models().push_back(m)
+    main.Add(fp)
+    fp.SetPosition(pcbnew.VECTOR2I(0, 0))  # both boards use the same coordinates, so origin to origin
+    pcbnew.SaveBoard(main_file, main)
+    return main_file, step
 
 
 if __name__ == "__main__":
@@ -283,5 +329,7 @@ if __name__ == "__main__":
         print(new_daughter(f, sys.argv[3]))
     elif cmd == "refresh":
         print(refresh_outline(f))
+    elif cmd == "stack":
+        print(stack_preview(f, float(sys.argv[3]) if len(sys.argv) > 3 else 10))
     elif cmd == "tree":
         print(tree(project_root(f)))

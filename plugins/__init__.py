@@ -58,6 +58,8 @@ TOOLS = [
      _tool("net_setup", "NetSetup")),
     ("array", "Array Place", "Place one LED+R (any channel) by hand, select it: all the others follow, live spacing.",
      _tool("array_place", "ArrayPlace")),
+    ("pad_stretch", "Pad Stretch", "Longer pads (hand soldering) on selected parts or all R / all C / one footprint; kept for the project.",
+     _tool("pad_stretch", "PadStretch")),
     ("power_trace", "Power Trace", "Selected net: size it from V/A, widen its traces, then route (W, or X on default keys).",
      _tool("power_trace", "PowerTrace")),
     ("copper_path", "Copper Path", "Wide copper that follows a net's traces (datasheet-style), keeps clearance; drag + refresh.",
