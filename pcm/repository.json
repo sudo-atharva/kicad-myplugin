@@ -1,0 +1,22 @@
+{
+  "$schema": "https://go.kicad.org/pcm/schemas/v1#/definitions/Repository",
+  "name": "MyPlugin by sudo-atharva",
+  "maintainer": {
+    "name": "Atharva Tikle",
+    "contact": {
+      "github": "https://github.com/sudo-atharva"
+    }
+  },
+  "packages": {
+    "url": "https://raw.githubusercontent.com/sudo-atharva/kicad-myplugin/main/pcm/packages.json",
+    "sha256": "a6a215ec0051fb815809f4d18a87c89259aa7ec8c4b3adf98596e9983c0aee51",
+    "update_time_utc": "2026-11-24 16:33:42",
+    "update_timestamp": 1795538022
+  },
+  "resources": {
+    "url": "https://raw.githubusercontent.com/sudo-atharva/kicad-myplugin/main/pcm/resources.zip",
+    "sha256": "4a28403a67bf6d5214bc0f09a3687e94917ade03bac98620f010060f996c50b2",
+    "update_time_utc": "2026-11-24 16:33:42",
+    "update_timestamp": 1795538022
+  }
+}

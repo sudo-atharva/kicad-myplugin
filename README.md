@@ -33,9 +33,30 @@ Example: LM2596 buck converter placed with Fab Rules + Net Setup applied:
 
 ## Install
 
-**From the release zip (recommended):** download `MyPlugin-<version>.zip` from [Releases](../../releases) → KiCad → *Plugin and Content Manager* → **Install from File…** → pick the zip → restart KiCad.
+**1. Inside KiCad, with automatic updates (recommended).** Once: KiCad → *Plugin and Content Manager* → **Manage…** (next
+to the repository list) → **+** → paste
 
-**Manual:** copy the `plugins/` folder to `<KiCad documents>/10.0/scripting/plugins/myplugin/` and restart KiCad.
+```
+https://raw.githubusercontent.com/sudo-atharva/kicad-myplugin/main/pcm/repository.json
+```
+
+→ Save → pick **MyPlugin by sudo-atharva** in the repository list → **Install** → *Apply Pending Changes* → restart KiCad.
+New versions then show up in the Plugin Manager under *Updates*.
+
+**2. One line in PowerShell** (also updates when you run it again):
+
+```
+irm https://raw.githubusercontent.com/sudo-atharva/kicad-myplugin/main/install.ps1 | iex
+```
+
+It downloads the latest release into KiCad's plugin folder and offers a desktop / Start-menu shortcut for the
+Project Manager. Restart KiCad afterwards.
+
+**3. From the zip.** Download `MyPlugin-<version>.zip` from [Releases](../../releases) → KiCad → *Plugin and Content
+Manager* → **Install from File…** → pick the zip → restart KiCad.
+
+After installing: the **MyPlugin** button is in the PCB editor's toolbar. Open it once and press **Project Manager** to
+get its desktop shortcut.
 
 Requirements: **KiCad 10.0** with its libraries. Nothing is hard-coded to one PC: KiCad, its libraries, `kicad-cli`, Java and FreeCAD are found through KiCad's own variables, `PATH` and the standard install locations (Windows, macOS, Linux; the Documents folder follows OneDrive/redirection). What a tool needs but the machine lacks is offered as a one-click install into a per-user folder:
 
