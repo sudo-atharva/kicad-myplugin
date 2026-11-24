@@ -50,7 +50,7 @@ def _tool(module, cls):
 
 
 TOOLS = [
-    ("project", "Project & Versions", "New project with 01_Source...07_FreeCAD + git; save versions, see history.",
+    ("project", "Project & Versions", "Project layout + git: versions (v1, v2...), daughter boards with the main outline, history.",
      _tool("project_git", "ProjectGit")),
     ("fab", "Fab Rules", "Set DRC to Lion Circuits capabilities (MII / Custom / Rush). Do this first.",
      _tool("fab_rules", "FabRules")),
@@ -76,6 +76,8 @@ TOOLS = [
      _tool("bom_export", "BomExport")),
     ("freecad", "FreeCAD (StepUp)", "Open in FreeCAD/KiCad StepUp and stay in sync both ways, no restarts.",
      _tool("freecad_stepup", "FreeCADStepUp")),
+    ("easyeda", "LCSC / EasyEDA Part", "Type an LCSC number (C2040): footprint, symbol and 3D model into the project, placed.",
+     _tool("easyeda_import", "EasyEdaImport")),
     ("models3d", "3D Models", "Pick each package's 3D model with a live preview: library matches or your own 3d_models/.",
      _run_models3d),
     ("symbols", "Eagle -> KiCad Symbols", "Swap Eagle schematic symbols for KiCad ones, netlist-checked.",

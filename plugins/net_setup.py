@@ -244,7 +244,9 @@ class NetSetup(pcbnew.ActionPlugin):
             top.Add(wx.StaticText(dlg, label=label), 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 4)
             ctl[key] = wx.TextCtrl(dlg, value=str(val), size=(50, -1))
             top.Add(ctl[key], 0, wx.ALL, 4)
-        top.Add(wx.StaticText(dlg, label="  Nets <= %.1f A and <= 30 V stay Default" % SIGNAL_A), 0, wx.ALIGN_CENTER_VERTICAL)
+        top.Add(wx.StaticText(dlg, label="  Nets <= %.1f A and <= 30 V stay Default.  Several rows selected "
+                                         "(drag / Shift+click / click the column header): type once, all get it."
+                                         % SIGNAL_A), 0, wx.ALIGN_CENTER_VERTICAL)
         cols = ["Net", "Pads", "Voltage V", "Current A", "No vias", "Width mm", "Clear mm", "Via mm", "Vias"]
         g = wx.grid.Grid(dlg)
         g.CreateGrid(len(names), len(cols))
@@ -283,7 +285,35 @@ class NetSetup(pcbnew.ActionPlugin):
                 g.SetReadOnly(r, c)
             refresh(r)
         g.AutoSizeColumns()
-        g.Bind(wx.grid.EVT_GRID_CELL_CHANGED, lambda e: (refresh(e.GetRow()), e.Skip()))
+        def selected_rows():
+            """Rows touched by the current selection (cells, blocks, whole rows or columns)."""
+            rows = set(g.GetSelectedRows()) | {c.GetRow() for c in g.GetSelectedCells()}
+            for tl, br in zip(g.GetSelectionBlockTopLeft(), g.GetSelectionBlockBottomRight()):
+                rows.update(range(tl.GetRow(), br.GetRow() + 1))
+            if g.GetSelectedCols():
+                rows.update(range(len(names)))
+            return rows
+
+        picked = set()  # selection when editing started: typing into one cell can collapse it
+
+        def on_edit_start(e):
+            picked.clear()
+            picked.update(selected_rows())
+            e.Skip()
+
+        def on_changed(e):
+            r, c = e.GetRow(), e.GetCol()
+            rows = (picked | selected_rows()) - {r}
+            if r in picked | selected_rows() or not rows:  # only spread when the edited cell is part of the selection
+                for o in rows:
+                    g.SetCellValue(o, c, g.GetCellValue(r, c))
+                    refresh(o)
+            refresh(r)
+            picked.clear()
+            e.Skip()
+
+        g.Bind(wx.grid.EVT_GRID_EDITOR_SHOWN, on_edit_start)
+        g.Bind(wx.grid.EVT_GRID_CELL_CHANGED, on_changed)
         for t in ctl.values():
             t.Bind(wx.EVT_TEXT, lambda e: ([refresh(r) for r in range(len(names))], e.Skip()))
 

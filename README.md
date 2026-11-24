@@ -1,6 +1,6 @@
 # MyPlugin for KiCad 10
 
-One toolbar button opens a hub with fifteen tools that take care of the tedious parts of PCB design: project folders + git versions, fab-correct DRC, array placement of repeated channels, trace widths from real current, datasheet-style wide copper, power pours and via stitching, a horizontal/vertical autorouter, clean silkscreen, documentation drawings, BOM + pick-and-place, a live KiCad ⇄ FreeCAD link, and Eagle-import cleanup.
+One toolbar button opens a hub with sixteen tools that take care of the tedious parts of PCB design: project folders + git versions (board versions and daughter boards), LCSC / EasyEDA parts by part number, fab-correct DRC, array placement of repeated channels, trace widths from real current, datasheet-style wide copper, power pours and via stitching, a horizontal/vertical autorouter, clean silkscreen, documentation drawings, BOM + pick-and-place, a live KiCad ⇄ FreeCAD link, and Eagle-import cleanup.
 
 ![MyPlugin hub](docs/hub.png)
 
@@ -8,7 +8,8 @@ One toolbar button opens a hub with fifteen tools that take care of the tedious 
 
 | Tool | What it does |
 |---|---|
-| **Project & Versions** | New project with the standard layout (`01_Source` … `07_FreeCAD`, blank KiCad project, README, `.gitignore`) and a git repo. For an open board: *Save version* commits the project with your note, *History* lists past versions. Only the project's own folder is committed, even inside a bigger repo. Needs [git](https://git-scm.com). |
+| **Project & Versions** | New project with the standard layout (`01_Source` … `07_FreeCAD`, blank KiCad project, README, `.gitignore`) and a git repo. For an open board: *Save version* commits the project with your note; *Start the next version* tags this one in git (`Main-v1`) and copies it to `01_Source/Main_v2/`; *New daughter board* makes `01_Source/<Name>_v1/` with the main board's outline, holes and connectors on a user layer named **Main board** (same coordinates, so the boards line up when stacked; *Refresh* redraws it after the main board changes); *Boards and history* shows which boards and versions exist and what belongs to what (`project.json`). Only the project's own folder is committed, even inside a bigger repo. Needs [git](https://git-scm.com). |
+| **LCSC / EasyEDA Part** | Type an LCSC number (e.g. `C2040`): footprint, symbol and 3D model from EasyEDA via [easyeda2kicad](https://github.com/uPesy/easyeda2kicad.py) (offered as a one-click install) go into `libs/` next to the board as the project library **EasyEDA**, and the footprint is placed with an `LCSC` field, which BOM + CPL Export puts in the JLCPCB column. |
 | **Fab Rules** | Sets Board Setup constraints, the Default netclass and DRC rules to Lion Circuits' published capabilities (MII / Custom / Rush, 1–3 oz). Optionally makes them the default for every new project. |
 | **Net Setup** | Enter voltage and current per net → IPC-2221 trace width, clearance, via size and via count. Creates netclasses, adds the sizes to the toolbar dropdowns, and writes `.kicad_dru` rules so DRC flags power traces that are too thin. **Min current** (default 0.5 A) sizes every net for at least that, so unlisted nets never fall back to the thinnest trace. **No vias** (ticked by default from 24 V) makes any via on that net a DRC error. |
 | **Array Place** | Place one channel by hand (e.g. an LED and its resistor), select it, run: every other channel wired the same way is found by connectivity (reference numbers don't matter) and laid out like yours. Spacing X/Y and channels per row update the board live; order by reference or by connector pin. Cancel puts everything back. |
@@ -40,6 +41,7 @@ Requirements: **KiCad 10.0** with its libraries. Nothing is hard-coded to one PC
 |---|---|---|
 | Autoroute H/V | Java (current, e.g. Temurin 25) + Freerouting | Freerouting: downloaded from its official releases. Java: link to install it. |
 | Docs, Pretty mode | PcbDraw | `pip install --user pcbdraw` into KiCad's Python |
+| LCSC / EasyEDA Part | easyeda2kicad (+ internet) | `pip install --user easyeda2kicad` into KiCad's Python |
 | FreeCAD (StepUp) | FreeCAD 0.21+ (tested 1.1), KiCad StepUp, kicad-python | StepUp downloaded into the FreeCAD user `Mod` folder FreeCAD reads; kicad-python pip-installed. Push/pull also needs *Preferences › Plugins › Enable KiCad API* (off by default). |
 
 Overrides if you keep tools elsewhere: `KICAD_CLI`, `FREEROUTING_JAR`, `FREECAD_EXE`, `JAVA_HOME`.
@@ -50,9 +52,10 @@ Nothing is written into the plugin folder. Everything a tool produces goes **nex
 
 ```
 Project-Name/
-├── 01_Source/         ← KiCad project
+├── project.json       ← boards, versions, daughter boards (written by Project & Versions)
+├── 01_Source/         ← KiCad projects: Main_v1/, Main_v2/, Display_v1/ ... (or one project directly here)
 ├── 02_Datasheets/
-├── 03_Manufacturing/  ← BOM + CPL export
+├── 03_Manufacturing/  ← BOM + CPL export (per board version: 03_Manufacturing/Main_v2/)
 ├── 04_Docs/           ← Docs output
 ├── 05_Testing/
 ├── 06_Code/

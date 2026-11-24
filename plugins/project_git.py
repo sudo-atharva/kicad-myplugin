@@ -72,9 +72,14 @@ def git(root, *args):
 
 
 def project_root(board_file):
-    """The project folder: parent of 01_Source/01_PCB/..., else the board's own folder."""
+    """The project folder: holds 01_Source (board in 01_Source/ or in 01_Source/<Board_vN>/), else the board's folder."""
     d = os.path.dirname(os.path.abspath(board_file))
-    return os.path.dirname(d) if os.path.basename(d)[:3] == "01_" else d
+    for cand in (os.path.dirname(d), os.path.dirname(os.path.dirname(d))):
+        if os.path.basename(d)[:3] == "01_" and cand == os.path.dirname(d):
+            return cand
+        if os.path.isdir(os.path.join(cand, FOLDERS[0])) or os.path.isfile(os.path.join(cand, "project.json")):
+            return cand
+    return d
 
 
 def scaffold(root, name, source_too=True):
@@ -157,23 +162,56 @@ class ProjectGit(object):
     def Run(self):
         import wx, pcbnew
         board_file = pcbnew.GetBoard().GetFileName()
-        opts = ["Save a version of this project (git commit)", "Show history of this project",
+        opts = ["Save a version of this project (git commit)",
+                "Show boards and history of this project",
+                "Start the next version of this board (v1 -> v2, old one kept and tagged)",
+                "New daughter board of this board (main outline on a 'Main board' layer)",
+                "Refresh the main board outline (on a daughter board)",
                 "New project with the standard layout..."]
         if not board_file:
-            opts = opts[2:]
-        dlg = wx.SingleChoiceDialog(None, "Project folders: 01_Source ... 07_FreeCAD, versions kept with git.",
-                                    "Project & Versions", opts)
+            opts = opts[-1:]
+        dlg = wx.SingleChoiceDialog(None, "Project folders: 01_Source ... 07_FreeCAD, each board version in 01_Source/<Board>_vN, "
+                                    "versions kept with git.", "Project & Versions", opts)
         ok, pick = dlg.ShowModal() == wx.ID_OK, dlg.GetStringSelection()
         dlg.Destroy()
         if not ok:
             return
         try:
-            if pick.startswith("New"):
+            if pick.startswith("New project"):
                 self.new(wx)
+            elif pick.startswith(("Start", "New daughter", "Refresh")):
+                self.boards(wx, pcbnew, board_file, pick)
             else:
                 self.current(wx, pcbnew, board_file, pick.startswith("Show"))
         except RuntimeError as e:
             wx.MessageBox(str(e), "Project & Versions")
+
+    def boards(self, wx, pcbnew, board_file, pick):
+        try:
+            from . import boards
+        except ImportError:
+            import boards
+        board = pcbnew.GetBoard()
+        if pick.startswith("Refresh"):
+            main, n = boards.refresh_outline(board_file, board)
+            pcbnew.Refresh()
+            wx.MessageBox("Redrew %d items of %s on the '%s' layer. Save to keep it." % (n, main, boards.OUTLINE_LAYER_NAME),
+                          "Project & Versions")
+            return
+        pcbnew.SaveBoard(board_file, board)  # version what you see, not the last save
+        if pick.startswith("Start"):
+            note = wx.GetTextFromUser("Note for the version you are finishing (optional):", "Next version", "")
+            new = boards.next_version(board_file, note.strip())
+            text = "This version is saved and tagged in git. The next one is\n%s" % new
+        else:
+            name = wx.GetTextFromUser("Daughter board name (e.g. Display, Sensor):", "New daughter board", "")
+            if not name.strip():
+                return
+            new, n = boards.new_daughter(board_file, name, board)
+            text = ("Created %s\nwith this board's outline, holes and connectors (%d items) on the '%s' layer, at the same "
+                    "coordinates. Draw the daughter board's own outline on Edge.Cuts." % (new, n, boards.OUTLINE_LAYER_NAME))
+        if wx.MessageBox(text + "\n\nOpen it in KiCad now?", "Project & Versions", wx.YES_NO) == wx.YES and hasattr(os, "startfile"):
+            os.startfile(new.replace(".kicad_pcb", ".kicad_pro"))
 
     def new(self, wx):
         dd = wx.DirDialog(None, "Folder to create the project in (e.g. your PCBs folder)")
@@ -193,8 +231,8 @@ class ProjectGit(object):
     def current(self, wx, pcbnew, board_file, show_only):
         root = project_root(board_file)
         if show_only:
-            from . import _show_text
-            _show_text("History - " + root, history(root) or "No versions yet.")
+            from . import _show_text, boards
+            _show_text("Boards and history - " + root, boards.tree(root) + "\n\n" + (history(root) or "No versions yet."))
             return
         pcbnew.SaveBoard(board_file, pcbnew.GetBoard())  # commit what you see, not the last save
         made = scaffold(root, os.path.splitext(os.path.basename(board_file))[0], source_too=False)
